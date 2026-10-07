@@ -700,24 +700,7 @@ object ArchiveHelper {
         return try {
             extractZip(file, destDir, null, null, onProgress)
         } catch (_: Exception) {
-            val info = inspect7zOrRar(file, file.extension.uppercase()).getOrNull()
-            val entries = info?.entries ?: emptyList()
-            val destCanonical = destDir.canonicalFile
-            for ((idx, item) in entries.withIndex()) {
-                val outFile = File(destDir, item.fullPath)
-                val outCanonical = outFile.canonicalFile
-                if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
-                    return Result.failure(SecurityException("Zip Slip detected: Archive entry attempts to write outside destination (${item.fullPath})"))
-                }
-                outFile.parentFile?.mkdirs()
-                onProgress((idx + 1).toFloat() / entries.size.coerceAtLeast(1), item.name)
-                FileInputStream(file).use { fis ->
-                    FileOutputStream(outFile).use { fos ->
-                        fis.copyTo(fos)
-                    }
-                }
-            }
-            Result.success(destDir)
+            Result.failure(UnsupportedOperationException("Direct decompression of ${file.extension.uppercase()} containers requires a native decompressor plugin."))
         }
     }
 

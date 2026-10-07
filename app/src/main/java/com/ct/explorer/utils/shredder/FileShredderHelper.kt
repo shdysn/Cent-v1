@@ -82,7 +82,7 @@ object FileShredderHelper {
         val bufferSize = 64 * 1024
         val buffer = ByteArray(bufferSize)
 
-        RandomAccessFile(file, "rws").use { raf ->
+        RandomAccessFile(file, "rw").use { raf ->
             for (pass in 1..method.passes) {
                 onProgress(
                     ShredProgress(

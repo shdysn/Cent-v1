@@ -44,8 +44,11 @@ class TimeMachineRepository {
             File(root, "Music")
         )
 
+        val perDirLimit = 250
         targetDirs.forEach { dir ->
-            collectFiles(dir, allFiles, maxCount = 800)
+            val dirFiles = mutableListOf<File>()
+            collectFiles(dir, dirFiles, maxCount = perDirLimit, currentDepth = 0, maxDepth = 4)
+            allFiles.addAll(dirFiles)
         }
 
         val now = Calendar.getInstance()
@@ -121,13 +124,14 @@ class TimeMachineRepository {
         )
     }
 
-    private fun collectFiles(dir: File, out: MutableList<File>, maxCount: Int) {
-        if (!dir.exists() || !dir.isDirectory || out.size >= maxCount) return
-        dir.listFiles()?.forEach { f ->
+    private fun collectFiles(dir: File, out: MutableList<File>, maxCount: Int, currentDepth: Int, maxDepth: Int) {
+        if (!dir.exists() || !dir.isDirectory || out.size >= maxCount || currentDepth > maxDepth) return
+        val list = dir.listFiles() ?: return
+        for (f in list) {
+            if (out.size >= maxCount) break
+            if (f.name.startsWith(".")) continue
             if (f.isDirectory) {
-                if (!f.name.startsWith(".")) {
-                    collectFiles(f, out, maxCount)
-                }
+                collectFiles(f, out, maxCount, currentDepth + 1, maxDepth)
             } else if (f.isFile && f.length() > 0) {
                 out.add(f)
             }

@@ -175,6 +175,11 @@ object XapkInstaller {
                             val safeName = obbEntryName.substringAfterLast('/').replace("..", "").replace("/", "")
                             if (safeName.isBlank()) continue
                             val obbFile = File(obbDir, safeName)
+                            val obbCanonical = obbFile.canonicalFile
+                            val obbDirCanonical = obbDir.canonicalFile
+                            if (!obbCanonical.path.startsWith(obbDirCanonical.path + File.separator)) {
+                                continue
+                            }
                             onProgress(0.1f, "Copying OBB: ${obbFile.name}")
                             zf.getInputStream(entry).use { input ->
                                 FileOutputStream(obbFile).use { output ->

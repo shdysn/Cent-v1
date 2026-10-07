@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
+import java.io.RandomAccessFile
 import java.security.MessageDigest
 
 data class DuplicateGroup(
@@ -119,11 +120,19 @@ class DuplicateRepository(private val context: Context) {
     private fun getPartialHash(file: File): String? {
         return try {
             val length = file.length()
+            if (length <= 0) return null
             val md = MessageDigest.getInstance("MD5")
-            FileInputStream(file).use { input ->
-                val buffer = ByteArray(16 * 1024) // 16KB head
-                val read = input.read(buffer)
-                if (read > 0) md.update(buffer, 0, read)
+            val buffer = ByteArray(16 * 1024)
+            RandomAccessFile(file, "r").use { raf ->
+                // 1. Head chunk (16KB)
+                val headRead = raf.read(buffer)
+                if (headRead > 0) md.update(buffer, 0, headRead)
+                // 2. Tail chunk (16KB) if file > 32KB
+                if (length > 32 * 1024) {
+                    raf.seek(length - (16 * 1024))
+                    val tailRead = raf.read(buffer)
+                    if (tailRead > 0) md.update(buffer, 0, tailRead)
+                }
             }
             // Include file length in hash
             md.digest().joinToString("") { "%02x".format(it) } + "_$length"

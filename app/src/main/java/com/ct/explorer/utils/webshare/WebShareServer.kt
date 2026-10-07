@@ -21,9 +21,12 @@ data class WebShareState(
     val ipAddress: String = "",
     val port: Int = 8080,
     val clientCount: Int = 0,
-    val lastActivity: String = "Server stopped"
+    val lastActivity: String = "Server stopped",
+    val sessionToken: String = ""
 ) {
-    val serverUrl: String get() = if (ipAddress.isNotEmpty()) "http://$ipAddress:$port" else ""
+    val serverUrl: String get() = if (ipAddress.isNotEmpty()) {
+        if (sessionToken.isNotEmpty()) "http://$ipAddress:$port?token=$sessionToken" else "http://$ipAddress:$port"
+    } else ""
 }
 
 /**
@@ -37,11 +40,18 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
     private val isRunning = AtomicBoolean(false)
     private val threadPool = Executors.newCachedThreadPool()
     private val rootDir = Environment.getExternalStorageDirectory()
+    private var sessionToken: String = ""
 
     var onStateChanged: ((WebShareState) -> Unit)? = null
     private var connectedClients = 0
 
     fun isRunning(): Boolean = isRunning.get()
+
+    private fun generateSessionToken(): String {
+        val chars = "abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+        val rnd = java.security.SecureRandom()
+        return (1..8).map { chars[rnd.nextInt(chars.length)] }.joinToString("")
+    }
 
     fun getLocalIpAddress(): String {
         try {
@@ -83,6 +93,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
             serverSocket = ServerSocket(port)
             isRunning.set(true)
             connectedClients = 0
+            sessionToken = generateSessionToken()
 
             notifyState("Server running on port $port")
 
@@ -90,6 +101,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
                 while (isRunning.get()) {
                     try {
                         val client = serverSocket?.accept() ?: break
+                        client.soTimeout = 15000 // 15s socket timeout
                         connectedClients++
                         notifyState("Device connected from ${client.inetAddress.hostAddress}")
 
@@ -126,6 +138,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         } catch (e: Exception) {}
         serverSocket = null
         connectedClients = 0
+        sessionToken = ""
         notifyState("Server stopped")
     }
 
@@ -135,7 +148,8 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
             ipAddress = getLocalIpAddress(),
             port = port,
             clientCount = connectedClients,
-            lastActivity = activity
+            lastActivity = activity,
+            sessionToken = sessionToken
         )
         onStateChanged?.invoke(state)
     }
@@ -184,15 +198,32 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         // Parse headers from the already-read header text
         var contentLength = 0
         var contentType = ""
+        val headersMap = mutableMapOf<String, String>()
         for (i in 1 until lines.size) {
             val line = lines[i].trim()
             if (line.isEmpty()) continue
             val lower = line.lowercase()
+            val colonIdx = line.indexOf(":")
+            if (colonIdx > 0) {
+                headersMap[line.substring(0, colonIdx).trim().lowercase()] = line.substring(colonIdx + 1).trim()
+            }
             if (lower.startsWith("content-length:")) {
                 contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
             } else if (lower.startsWith("content-type:")) {
                 contentType = line.substringAfter(":").trim()
             }
+        }
+
+        // Verify session authorization
+        val isAuth = isAuthorized(queryParams, headersMap)
+
+        if (!isAuth) {
+            if (method == "GET" && urlPath == "/") {
+                serveAuthPage(output)
+            } else {
+                sendResponse(output, 401, "application/json", "{\"status\":\"error\",\"message\":\"Unauthorized: Invalid or missing session token.\"}".toByteArray())
+            }
+            return
         }
 
         when {
@@ -217,6 +248,52 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
                 sendResponse(output, 404, "text/plain", "404 Not Found".toByteArray())
             }
         }
+    }
+
+    private fun isAuthorized(queryParams: Map<String, String>, headers: Map<String, String>): Boolean {
+        if (sessionToken.isEmpty()) return true
+        val paramToken = queryParams["token"]
+        if (paramToken == sessionToken) return true
+
+        val cookie = headers["cookie"] ?: ""
+        if (cookie.contains("session_token=$sessionToken")) return true
+
+        val auth = headers["authorization"] ?: headers["x-session-token"] ?: ""
+        if (auth.removePrefix("Bearer ").trim() == sessionToken) return true
+
+        return false
+    }
+
+    private fun serveAuthPage(out: OutputStream) {
+        val html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1">
+                <title>Cent Web Share — Authentication</title>
+                <style>
+                    body { font-family: system-ui, -apple-system, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; padding: 16px; }
+                    .card { background: #1e293b; padding: 32px; border-radius: 20px; max-width: 400px; width: 100%; border: 1px solid #334155; text-align: center; }
+                    h2 { color: #FF6700; margin-top: 0; }
+                    p { color: #94a3b8; font-size: 14px; margin-bottom: 24px; }
+                    input { width: 100%; padding: 14px; border-radius: 10px; border: 1px solid #475569; background: #0f172a; color: white; font-size: 16px; text-align: center; letter-spacing: 2px; box-sizing: border-box; }
+                    button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: #FF6700; color: white; font-weight: bold; font-size: 16px; margin-top: 16px; cursor: pointer; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h2>🔒 Cent Web Share</h2>
+                    <p>Enter the 8-character access token displayed on your Android device to unlock file access.</p>
+                    <form method="GET" action="/">
+                        <input type="text" name="token" placeholder="Security Token" required autocomplete="off" />
+                        <button type="submit">Unlock Files</button>
+                    </form>
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+        sendResponse(out, 401, "text/html; charset=UTF-8", html.toByteArray(Charsets.UTF_8))
     }
 
     private fun parseQuery(query: String): Map<String, String> {
@@ -412,7 +489,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
             </html>
         """.trimIndent()
 
-        sendResponse(out, 200, "text/html; charset=UTF-8", html.toByteArray(Charsets.UTF_8))
+        sendResponse(out, 200, "text/html; charset=UTF-8", html.toByteArray(Charsets.UTF_8), cookie = "session_token=$sessionToken; Path=/; SameSite=Lax")
     }
 
     private fun isWithinRoot(file: File, root: File): Boolean {
@@ -564,11 +641,19 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         }
     }
 
-    private fun sendResponse(out: OutputStream, code: Int, contentType: String, data: ByteArray) {
-        val statusText = if (code == 200) "OK" else if (code == 404) "Not Found" else "Error"
+    private fun sendResponse(out: OutputStream, code: Int, contentType: String, data: ByteArray, cookie: String? = null) {
+        val statusText = when (code) {
+            200 -> "OK"
+            401 -> "Unauthorized"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            else -> "Error"
+        }
+        val cookieHeader = if (cookie != null) "Set-Cookie: $cookie\r\n" else ""
         val header = "HTTP/1.1 $code $statusText\r\n" +
                 "Content-Type: $contentType\r\n" +
                 "Content-Length: ${data.size}\r\n" +
+                cookieHeader +
                 "Access-Control-Allow-Origin: *\r\n" +
                 "Connection: close\r\n\r\n"
         out.write(header.toByteArray(Charsets.UTF_8))

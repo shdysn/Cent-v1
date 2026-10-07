@@ -200,8 +200,11 @@ class SmartCollectionsRepository(private val context: Context) {
                 File(root, "Pictures")
             )
 
+            val perDirLimit = 100
             scanDirs.forEach { dir ->
-                scanRecursiveForKeywords(dir, collection.autoKeywords, matchedFiles, maxFiles = 100)
+                val dirMatches = mutableListOf<File>()
+                scanRecursiveForKeywords(dir, collection.autoKeywords, dirMatches, maxFiles = perDirLimit, currentDepth = 0, maxDepth = 4)
+                matchedFiles.addAll(dirMatches)
             }
         }
 
@@ -210,13 +213,21 @@ class SmartCollectionsRepository(private val context: Context) {
         CollectionWithFiles(collection, items, totalBytes)
     }
 
-    private fun scanRecursiveForKeywords(dir: File, keywords: List<String>, out: MutableList<File>, maxFiles: Int) {
-        if (!dir.exists() || !dir.isDirectory || out.size >= maxFiles) return
-        dir.listFiles()?.forEach { f ->
+    private fun scanRecursiveForKeywords(
+        dir: File,
+        keywords: List<String>,
+        out: MutableList<File>,
+        maxFiles: Int,
+        currentDepth: Int,
+        maxDepth: Int
+    ) {
+        if (!dir.exists() || !dir.isDirectory || out.size >= maxFiles || currentDepth > maxDepth) return
+        val list = dir.listFiles() ?: return
+        for (f in list) {
+            if (out.size >= maxFiles) break
+            if (f.name.startsWith(".")) continue
             if (f.isDirectory) {
-                if (!f.name.startsWith(".")) {
-                    scanRecursiveForKeywords(f, keywords, out, maxFiles)
-                }
+                scanRecursiveForKeywords(f, keywords, out, maxFiles, currentDepth + 1, maxDepth)
             } else if (f.isFile) {
                 val nameLower = f.name.lowercase()
                 if (keywords.any { nameLower.contains(it) }) {
