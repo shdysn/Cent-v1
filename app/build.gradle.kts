@@ -7,7 +7,7 @@ android {
     // CRITICAL AI STUDIO IMPORT LOCK:
     // DO NOT rename namespace or folder tree to "ai" or "com.aistudio.*".
     // Preserve existing directory paths and package structure on import.
-    namespace = "com.mi.explorer"
+    namespace = "com.ct.explorer"
     compileSdk = 36
 
     defaultConfig {

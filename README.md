@@ -49,7 +49,7 @@ A modern, high-performance Android File Explorer built from scratch using Kotlin
 - **UI Framework**: Jetpack Compose with Material Design 3
 - **Language**: Kotlin 2.2.21
 - **Package Name / Application ID**: `com.pkstudio.ctexplorer.app`
-- **Namespace**: `com.mi.explorer`
+- **Namespace**: `com.ct.explorer`
 
 ## 📦 Release APK Size Guarantee (2 MB - 3 MB Target)
 

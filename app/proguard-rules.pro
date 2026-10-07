@@ -4,13 +4,12 @@
 }
 
 # Keep Activity & Receivers
--keep public class com.mi.explorer.MainActivity
--keep public class com.mi.explorer.utils.PackageInstallerStatusReceiver
--keep public class com.mi.explorer.widget.CtStorageWidgetProvider
--keep public class com.mi.explorer.widget.MiStorageWidgetProvider
+-keep public class com.ct.explorer.MainActivity
+-keep public class com.ct.explorer.utils.PackageInstallerStatusReceiver
+-keep public class com.ct.explorer.widget.CtStorageWidgetProvider
 
 # Data models reflection safety
--keepclassmembers class com.mi.explorer.data.model.** {
+-keepclassmembers class com.ct.explorer.data.model.** {
     <fields>;
     <init>(...);
 }
