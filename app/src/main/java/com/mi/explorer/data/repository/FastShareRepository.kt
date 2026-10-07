@@ -176,15 +176,24 @@ class FastShareRepository(private val context: Context) {
     }
 
 
+    private fun escapeHtml(text: String): String {
+        return text.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#x27;")
+    }
+
     private fun buildHtmlPage(files: List<FileItem>): String {
         val rows = StringBuilder()
         for (f in files) {
             val encodedName = URLEncoder.encode(f.name, "UTF-8")
+            val safeName = escapeHtml(f.name)
             rows.append(
                 """
                 <div class="file-card">
                     <div class="file-info">
-                        <span class="file-name">${f.name}</span>
+                        <span class="file-name">$safeName</span>
                         <span class="file-size">${f.formattedSize}</span>
                     </div>
                     <a class="dl-btn" href="/download?file=$encodedName" download>Download</a>

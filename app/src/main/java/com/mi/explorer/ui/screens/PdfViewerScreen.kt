@@ -105,11 +105,23 @@ fun PdfViewerScreen(
         }
     }
 
+    var pdfRenderer by remember { mutableStateOf<PdfRenderer?>(null) }
+    var pfdRef by remember { mutableStateOf<ParcelFileDescriptor?>(null) }
+
+    DisposableEffect(file) {
+        onDispose {
+            try { pdfRenderer?.close() } catch (_: Exception) {}
+            try { pfdRef?.close() } catch (_: Exception) {}
+            renderedPages.values.forEach { runCatching { it.recycle() } }
+            renderedPages.clear()
+        }
+    }
+
     LaunchedEffect(listState.firstVisibleItemIndex) {
         currentPageIndex = listState.firstVisibleItemIndex
     }
 
-    // Load PDF
+    // Load PDF Initial
     LaunchedEffect(file) {
         if (file == null || !file.exists()) {
             errorMessage = "File not found"
@@ -125,27 +137,44 @@ fun PdfViewerScreen(
             try {
                 val pfd = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
                 val renderer = PdfRenderer(pfd)
+                pfdRef = pfd
+                pdfRenderer = renderer
                 val count = renderer.pageCount
                 withContext(Dispatchers.Main) {
                     pageCount = count
                     isLoading = false
                 }
 
-                val initialBatch = minOf(count, 4)
+                val initialBatch = minOf(count, 3)
                 for (i in 0 until initialBatch) {
                     renderSinglePage(renderer, i, renderedPages)
                 }
-
-                for (i in initialBatch until count) {
-                    renderSinglePage(renderer, i, renderedPages)
-                }
-
-                renderer.close()
-                pfd.close()
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     errorMessage = e.localizedMessage ?: "Failed to open PDF"
                     isLoading = false
+                }
+            }
+        }
+    }
+
+    // Dynamic Sliding Window Rendering around currentPageIndex
+    LaunchedEffect(currentPageIndex, pdfRenderer, pageCount) {
+        val renderer = pdfRenderer ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            // Evict pages far from viewport to bound memory usage
+            val toEvict = renderedPages.keys.filter { it < currentPageIndex - 3 || it > currentPageIndex + 4 }
+            for (k in toEvict) {
+                val bmp = renderedPages.remove(k)
+                bmp?.recycle()
+            }
+
+            // Render pages in active viewing range
+            val start = (currentPageIndex - 2).coerceAtLeast(0)
+            val end = (currentPageIndex + 3).coerceAtMost(pageCount - 1)
+            for (idx in start..end) {
+                if (!renderedPages.containsKey(idx)) {
+                    renderSinglePage(renderer, idx, renderedPages)
                 }
             }
         }
@@ -501,9 +530,9 @@ private suspend fun renderSinglePage(
     try {
         synchronized(renderer) {
             val page = renderer.openPage(index)
-            val scaleFactor = 1.8f
-            val destWidth = (page.width * scaleFactor).toInt().coerceAtMost(1600)
-            val destHeight = (page.height * scaleFactor).toInt().coerceAtMost(2400)
+            val scaleFactor = 1.3f
+            val destWidth = (page.width * scaleFactor).toInt().coerceAtMost(1080)
+            val destHeight = (page.height * scaleFactor).toInt().coerceAtMost(1600)
 
             val bitmap = Bitmap.createBitmap(destWidth, destHeight, Bitmap.Config.ARGB_8888)
             val canvas = android.graphics.Canvas(bitmap)

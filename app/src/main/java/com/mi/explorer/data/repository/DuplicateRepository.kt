@@ -127,18 +127,20 @@ class DuplicateRepository(private val context: Context) {
     private fun isExactDuplicate(f1: File, f2: File): Boolean {
         if (f1.length() != f2.length()) return false
         return try {
-            FileInputStream(f1).use { in1 ->
-                FileInputStream(f2).use { in2 ->
+            java.io.BufferedInputStream(FileInputStream(f1)).use { in1 ->
+                java.io.BufferedInputStream(FileInputStream(f2)).use { in2 ->
                     val buf1 = ByteArray(64 * 1024)
                     val buf2 = ByteArray(64 * 1024)
-                    while (true) {
-                        val r1 = in1.read(buf1)
-                        val r2 = in2.read(buf2)
+                    var remaining = f1.length()
+                    while (remaining > 0) {
+                        val toRead = minOf(remaining, buf1.size.toLong()).toInt()
+                        val r1 = readFully(in1, buf1, toRead)
+                        val r2 = readFully(in2, buf2, toRead)
                         if (r1 != r2) return false
-                        if (r1 <= 0) break
                         for (i in 0 until r1) {
                             if (buf1[i] != buf2[i]) return false
                         }
+                        remaining -= r1
                     }
                     true
                 }
@@ -146,6 +148,16 @@ class DuplicateRepository(private val context: Context) {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun readFully(stream: java.io.InputStream, buffer: ByteArray, length: Int): Int {
+        var total = 0
+        while (total < length) {
+            val read = stream.read(buffer, total, length - total)
+            if (read == -1) break
+            total += read
+        }
+        return total
     }
 
     suspend fun deleteFiles(files: List<FileItem>): Int = withContext(Dispatchers.IO) {

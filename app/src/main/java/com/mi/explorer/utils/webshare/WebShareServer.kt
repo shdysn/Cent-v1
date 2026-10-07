@@ -141,10 +141,35 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
     }
 
     private fun handleClient(socket: Socket) {
-        val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+        val rawInput = socket.getInputStream()
         val output = BufferedOutputStream(socket.getOutputStream())
 
-        val requestLine = input.readLine() ?: return
+        // Read HTTP request line and headers safely without buffering the binary body
+        val headerBytes = ByteArrayOutputStream()
+        var consecutiveNewlines = 0
+        var b: Int
+        while (rawInput.read().also { b = it } != -1) {
+            headerBytes.write(b)
+            if (b == '\n'.code) {
+                consecutiveNewlines++
+                val bytes = headerBytes.toByteArray()
+                val len = bytes.size
+                if (len >= 4 && bytes[len - 4] == '\r'.code.toByte() && bytes[len - 3] == '\n'.code.toByte() &&
+                    bytes[len - 2] == '\r'.code.toByte() && bytes[len - 1] == '\n'.code.toByte()) {
+                    break
+                }
+                if (len >= 2 && bytes[len - 2] == '\n'.code.toByte() && bytes[len - 1] == '\n'.code.toByte()) {
+                    break
+                }
+            }
+            if (headerBytes.size() > 64 * 1024) break // Header size limit guard
+        }
+
+        val headerText = headerBytes.toString("UTF-8")
+        val lines = headerText.lines()
+        if (lines.isEmpty()) return
+
+        val requestLine = lines[0].trim()
         val parts = requestLine.split(" ")
         if (parts.size < 2) return
 
@@ -156,17 +181,17 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
 
         val queryParams = parseQuery(query)
 
-        // Read headers
+        // Parse headers from the already-read header text
         var contentLength = 0
         var contentType = ""
-        var line: String?
-        while (input.readLine().also { line = it } != null) {
-            if (line.isNullOrEmpty()) break
-            val lower = line!!.lowercase()
+        for (i in 1 until lines.size) {
+            val line = lines[i].trim()
+            if (line.isEmpty()) continue
+            val lower = line.lowercase()
             if (lower.startsWith("content-length:")) {
-                contentLength = line!!.substringAfter(":").trim().toIntOrNull() ?: 0
+                contentLength = line.substringAfter(":").trim().toIntOrNull() ?: 0
             } else if (lower.startsWith("content-type:")) {
-                contentType = line!!.substringAfter(":").trim()
+                contentType = line.substringAfter(":").trim()
             }
         }
 
@@ -185,7 +210,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
             method == "POST" && urlPath == "/api/upload" -> {
                 val uploadDir = queryParams["dir"]?.let { URLDecoder.decode(it, "UTF-8") } ?: rootDir.absolutePath
                 val fileName = queryParams["filename"]?.let { URLDecoder.decode(it, "UTF-8") } ?: "uploaded_${System.currentTimeMillis()}"
-                handleFileUpload(socket.getInputStream(), uploadDir, fileName, contentLength, output)
+                handleFileUpload(rawInput, uploadDir, fileName, contentLength, output)
             }
             else -> {
                 sendResponse(output, 404, "text/plain", "404 Not Found".toByteArray())

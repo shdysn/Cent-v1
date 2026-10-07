@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.mi.explorer.data.model.*
 import com.mi.explorer.data.repository.*
 import com.mi.explorer.ui.components.MiTab
@@ -493,9 +494,12 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun loadRecentFiles() {
+    fun loadRecentFiles(forceRefresh: Boolean = false) {
         viewModelScope.launch(Dispatchers.IO) {
             isRecentLoading.value = true
+            if (forceRefresh) {
+                FileRepository.invalidateRecentCache()
+            }
             val files = fileRepository.getRecentFiles()
             _recentFiles.value = files
             isRecentLoading.value = false
@@ -577,11 +581,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun refreshCurrentDirectory() {
+        FileRepository.invalidateAllFileCaches()
         loadDirectory(_storageState.value.currentDir, addToHistory = false)
         refreshStorage()
-        if (_selectedTab.value == MiTab.RECENT) {
-            loadRecentFiles()
-        }
+        loadRecentFiles(forceRefresh = true)
     }
 
     fun toggleViewMode() {
@@ -1885,7 +1888,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 java.io.FileInputStream(item.file).use { fis ->
                     player.setDataSource(fis.fd)
                 }
-                player.prepare()
+                withContext(Dispatchers.IO) {
+                    player.prepare()
+                }
 
                 var title = item.name
                 var artist = "Unknown Artist"
@@ -1993,9 +1998,13 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         audioProgressJob = viewModelScope.launch {
             while (isActive) {
                 val player = mediaPlayer
-                if (player != null && player.isPlaying) {
-                    _audioPlayerState.update {
-                        it.copy(currentPositionMs = player.currentPosition, isPlaying = true)
+                if (player != null) {
+                    val isPlaying = runCatching { player.isPlaying }.getOrDefault(false)
+                    val currentPos = runCatching { player.currentPosition }.getOrDefault(0)
+                    if (isPlaying) {
+                        _audioPlayerState.update {
+                            it.copy(currentPositionMs = currentPos, isPlaying = true)
+                        }
                     }
                 }
                 delay(500)
@@ -2005,17 +2014,18 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun toggleAudioPlayPause() {
         val player = mediaPlayer ?: return
-        if (player.isPlaying) {
-            player.pause()
+        val isCurrentlyPlaying = runCatching { player.isPlaying }.getOrDefault(false)
+        if (isCurrentlyPlaying) {
+            runCatching { player.pause() }
             _audioPlayerState.update { it.copy(isPlaying = false) }
         } else {
-            player.start()
+            runCatching { player.start() }
             _audioPlayerState.update { it.copy(isPlaying = true) }
         }
     }
 
     fun seekAudioTo(positionMs: Int) {
-        mediaPlayer?.seekTo(positionMs)
+        runCatching { mediaPlayer?.seekTo(positionMs) }
         _audioPlayerState.update { it.copy(currentPositionMs = positionMs) }
     }
 

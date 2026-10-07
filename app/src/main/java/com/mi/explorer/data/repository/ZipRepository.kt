@@ -149,6 +149,7 @@ class ZipRepository(private val context: Context) {
     ): Result<Int> = withContext(Dispatchers.IO) {
         try {
             if (!targetDir.exists()) targetDir.mkdirs()
+            val destCanonical = targetDir.canonicalFile
             var extractedCount = 0
 
             ZipInputStream(BufferedInputStream(FileInputStream(zipFile))).use { zis ->
@@ -158,6 +159,10 @@ class ZipRepository(private val context: Context) {
 
                     if (shouldExtract) {
                         val destFile = File(targetDir, entry.name)
+                        val outCanonical = destFile.canonicalFile
+                        if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+                            throw SecurityException("Zip Slip detected: Entry attempts to escape target directory (${entry.name})")
+                        }
                         if (entry.isDirectory) {
                             destFile.mkdirs()
                         } else {

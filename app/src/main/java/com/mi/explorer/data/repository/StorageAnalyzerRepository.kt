@@ -108,10 +108,17 @@ class StorageAnalyzerRepository(private val context: Context) {
 
     private fun queryMediaCategorySize(uri: android.net.Uri): Long {
         return try {
-            val projection = arrayOf("SUM(${MediaStore.MediaColumns.SIZE})")
+            val projection = arrayOf(MediaStore.MediaColumns.SIZE)
+            var total = 0L
             context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getLong(0) else 0L
-            } ?: 0L
+                val sizeIdx = cursor.getColumnIndex(MediaStore.MediaColumns.SIZE)
+                if (sizeIdx != -1) {
+                    while (cursor.moveToNext()) {
+                        total += cursor.getLong(sizeIdx).coerceAtLeast(0L)
+                    }
+                }
+            }
+            total
         } catch (e: Exception) {
             0L
         }

@@ -453,6 +453,7 @@ fun VideoPlayerScreen(
         window?.navigationBarColor = Color.Black.toArgb()
 
         onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (window != null) {
                 val controller = WindowCompat.getInsetsController(window, view)

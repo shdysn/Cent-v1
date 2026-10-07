@@ -172,7 +172,9 @@ class MainActivity : ComponentActivity() {
                         val videoFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
                             java.io.File(uri.path!!)
                         } else {
-                            java.io.File(cacheDir, displayName).apply {
+                            val safeName = java.io.File(displayName).name.ifEmpty { "video_${System.currentTimeMillis()}.mp4" }
+                            java.io.File(cacheDir, safeName).apply {
+                                parentFile?.mkdirs()
                                 contentResolver.openInputStream(uri)?.use { input ->
                                     outputStream().use { output -> input.copyTo(output) }
                                 }
@@ -190,11 +192,12 @@ class MainActivity : ComponentActivity() {
                 // APK, XAPK, APKS Installation Packages (In-App Installer)
                 lowerName.endsWith(".apk") || lowerName.endsWith(".xapk") || lowerName.endsWith(".apks") || lowerMime.contains("android.package-archive") -> {
                     try {
-                        val safeName = displayName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                        val safeName = java.io.File(displayName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "pkg_${System.currentTimeMillis()}.apk" }
                         val cacheFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).canRead()) {
                             java.io.File(uri.path!!)
                         } else {
                             java.io.File(cacheDir, "view_${System.currentTimeMillis()}_$safeName").apply {
+                                parentFile?.mkdirs()
                                 contentResolver.openInputStream(uri)?.use { input ->
                                     outputStream().use { output -> input.copyTo(output) }
                                 }
@@ -214,7 +217,9 @@ class MainActivity : ComponentActivity() {
                 // PDF Documents
                 lowerName.endsWith(".pdf") || lowerMime.contains("pdf") -> {
                     try {
-                        val cacheFile = java.io.File(cacheDir, displayName).apply {
+                        val safeName = java.io.File(displayName).name.ifEmpty { "document_${System.currentTimeMillis()}.pdf" }
+                        val cacheFile = java.io.File(cacheDir, safeName).apply {
+                            parentFile?.mkdirs()
                             contentResolver.openInputStream(uri)?.use { input ->
                                 outputStream().use { output -> input.copyTo(output) }
                             }
@@ -229,10 +234,12 @@ class MainActivity : ComponentActivity() {
                 lowerName.endsWith(".tar") || lowerName.endsWith(".gz") || lowerName.endsWith(".tgz") ||
                 lowerMime.contains("zip") || lowerMime.contains("tar") || lowerMime.contains("rar") -> {
                     try {
+                        val safeName = java.io.File(displayName).name.ifEmpty { "archive_${System.currentTimeMillis()}.zip" }
                         val cacheFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
                             java.io.File(uri.path!!)
                         } else {
-                            java.io.File(cacheDir, displayName).apply {
+                            java.io.File(cacheDir, safeName).apply {
+                                parentFile?.mkdirs()
                                 contentResolver.openInputStream(uri)?.use { input ->
                                     outputStream().use { output -> input.copyTo(output) }
                                 }

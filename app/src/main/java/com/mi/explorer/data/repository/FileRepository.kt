@@ -42,6 +42,19 @@ class FileRepository(private val context: Context) {
         var cachedRootItems: List<FileItem>? = null
         @Volatile
         var cachedRecentItems: List<FileItem>? = null
+
+        fun invalidateRecentCache() {
+            cachedRecentItems = null
+        }
+
+        fun invalidateRootCache() {
+            cachedRootItems = null
+        }
+
+        fun invalidateAllFileCaches() {
+            cachedRecentItems = null
+            cachedRootItems = null
+        }
     }
 
     val rootStorageDirectory: File by lazy {
@@ -819,6 +832,8 @@ class FileRepository(private val context: Context) {
     suspend fun delete(item: FileItem): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val success = if (item.isDirectory) item.file.deleteRecursively() else item.file.delete()
+            invalidateAllFileCaches()
+            invalidateCategoryCache()
             invalidateFolderSize(item.file.parentFile)
             Result.success(success)
         } catch (e: Exception) {
@@ -828,12 +843,17 @@ class FileRepository(private val context: Context) {
 
     suspend fun rename(item: FileItem, newName: String): Result<File> = withContext(Dispatchers.IO) {
         try {
-            val sanitized = newName.trim().replace("/", "")
-            if (sanitized.isEmpty()) return@withContext Result.failure(IllegalArgumentException("New name cannot be empty"))
-            val newFile = File(item.file.parentFile, sanitized)
+            val sanitized = newName.trim().replace("/", "").replace("\\", "").replace("\u0000", "")
+            if (sanitized.isEmpty() || sanitized == "." || sanitized == "..") {
+                return@withContext Result.failure(IllegalArgumentException("Invalid target file name"))
+            }
+            val parent = item.file.parentFile ?: return@withContext Result.failure(IllegalStateException("Cannot rename root item"))
+            val newFile = File(parent, sanitized)
             if (newFile.exists()) return@withContext Result.failure(IllegalStateException("Target already exists"))
             val success = item.file.renameTo(newFile)
-            invalidateFolderSize(item.file.parentFile)
+            invalidateAllFileCaches()
+            invalidateCategoryCache()
+            invalidateFolderSize(parent)
             if (success) Result.success(newFile) else Result.failure(Exception("Rename failed"))
         } catch (e: Exception) {
             Result.failure(e)
@@ -843,7 +863,14 @@ class FileRepository(private val context: Context) {
     suspend fun copy(sources: List<FileItem>, destinationDir: File): Result<Int> = withContext(Dispatchers.IO) {
         try {
             var count = 0
+            val destCanonical = destinationDir.canonicalFile
             for (source in sources) {
+                if (source.isDirectory) {
+                    val srcCanonical = source.file.canonicalFile
+                    if (destCanonical.path == srcCanonical.path || destCanonical.path.startsWith(srcCanonical.path + File.separator)) {
+                        return@withContext Result.failure(IllegalArgumentException("Cannot copy folder '${source.name}' into itself or its child directory"))
+                    }
+                }
                 val dest = File(destinationDir, source.name)
                 if (source.isDirectory) {
                     source.file.copyRecursively(dest, overwrite = true)
@@ -852,6 +879,8 @@ class FileRepository(private val context: Context) {
                 }
                 count++
             }
+            invalidateAllFileCaches()
+            invalidateCategoryCache()
             invalidateFolderSize(destinationDir)
             Result.success(count)
         } catch (e: Exception) {
@@ -862,7 +891,14 @@ class FileRepository(private val context: Context) {
     suspend fun move(sources: List<FileItem>, destinationDir: File): Result<Int> = withContext(Dispatchers.IO) {
         try {
             var count = 0
+            val destCanonical = destinationDir.canonicalFile
             for (source in sources) {
+                if (source.isDirectory) {
+                    val srcCanonical = source.file.canonicalFile
+                    if (destCanonical.path == srcCanonical.path || destCanonical.path.startsWith(srcCanonical.path + File.separator)) {
+                        return@withContext Result.failure(IllegalArgumentException("Cannot move folder '${source.name}' into itself or its child directory"))
+                    }
+                }
                 val dest = File(destinationDir, source.name)
                 val moved = source.file.renameTo(dest)
                 if (!moved) {
@@ -877,6 +913,8 @@ class FileRepository(private val context: Context) {
                 invalidateFolderSize(source.file.parentFile)
                 count++
             }
+            invalidateAllFileCaches()
+            invalidateCategoryCache()
             invalidateFolderSize(destinationDir)
             Result.success(count)
         } catch (e: Exception) {
@@ -933,10 +971,15 @@ class FileRepository(private val context: Context) {
 
     suspend fun unzip(zipFile: File, outputDir: File): Result<File> = withContext(Dispatchers.IO) {
         try {
+            val destCanonical = outputDir.canonicalFile
             ZipInputStream(FileInputStream(zipFile)).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     val destFile = File(outputDir, entry.name)
+                    val outCanonical = destFile.canonicalFile
+                    if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+                        throw SecurityException("Zip Slip detected: Entry attempts to escape output directory (${entry.name})")
+                    }
                     if (entry.isDirectory) {
                         destFile.mkdirs()
                     } else {
@@ -949,6 +992,9 @@ class FileRepository(private val context: Context) {
                     entry = zis.nextEntry
                 }
             }
+            invalidateAllFileCaches()
+            invalidateCategoryCache()
+            invalidateFolderSize(outputDir)
             Result.success(outputDir)
         } catch (e: Exception) {
             Result.failure(e)
