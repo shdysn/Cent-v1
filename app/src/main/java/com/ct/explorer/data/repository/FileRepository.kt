@@ -879,6 +879,9 @@ class FileRepository(private val context: Context) {
 
     suspend fun delete(item: FileItem): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
+            if (!item.file.canWrite()) {
+                try { item.file.setWritable(true) } catch (_: Exception) {}
+            }
             val success = if (item.isDirectory) item.file.deleteRecursively() else item.file.delete()
             invalidateAllFileCaches()
             invalidateCategoryCache()
@@ -984,7 +987,11 @@ class FileRepository(private val context: Context) {
                         return@withContext Result.failure(IllegalArgumentException("Cannot move folder '${source.name}' into itself or its child directory"))
                     }
                 }
-                val dest = File(destinationDir, source.name)
+                val dest = if (File(destinationDir, source.name).exists() && srcCanonical.parentFile?.canonicalPath != destCanonical.path) {
+                    generateNonConflictingFile(destinationDir, source.name)
+                } else {
+                    File(destinationDir, source.name)
+                }
                 val destCanonicalFile = dest.canonicalFile
                 if (srcCanonical.path == destCanonicalFile.path) {
                     // Already in destination directory; nothing to move
@@ -1026,9 +1033,17 @@ class FileRepository(private val context: Context) {
         }
     }
 
-    suspend fun readText(file: File): Result<String> = withContext(Dispatchers.IO) {
+    suspend fun readText(file: File, maxChars: Int = 300_000): Result<String> = withContext(Dispatchers.IO) {
         try {
-            Result.success(file.readText())
+            if (!file.exists() || !file.canRead()) {
+                return@withContext Result.failure(java.io.FileNotFoundException("File not found or unreadable"))
+            }
+            val charArray = CharArray(maxChars)
+            val readCount = file.bufferedReader(Charsets.UTF_8).use { reader ->
+                reader.read(charArray, 0, maxChars)
+            }
+            val text = if (readCount > 0) String(charArray, 0, readCount) else ""
+            Result.success(text)
         } catch (e: Exception) {
             Result.failure(e)
         }

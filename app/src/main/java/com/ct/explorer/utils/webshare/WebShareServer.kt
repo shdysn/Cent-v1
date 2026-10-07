@@ -36,6 +36,7 @@ data class WebShareState(
  */
 class WebShareServer(private val context: Context, private val port: Int = 8080) {
 
+    private var activePort: Int = port
     private var serverSocket: ServerSocket? = null
     private val isRunning = AtomicBoolean(false)
     private val threadPool = Executors.newCachedThreadPool()
@@ -90,12 +91,27 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         if (isRunning.get()) return true
 
         return try {
-            serverSocket = ServerSocket(port)
+            var ss: ServerSocket? = null
+            var boundPort = port
+            for (p in port..(port + 5)) {
+                try {
+                    ss = ServerSocket(p)
+                    boundPort = p
+                    break
+                } catch (_: java.net.BindException) {
+                    continue
+                }
+            }
+            if (ss == null) {
+                ss = ServerSocket(port)
+            }
+            serverSocket = ss
+            activePort = boundPort
             isRunning.set(true)
             connectedClients = 0
             sessionToken = generateSessionToken()
 
-            notifyState("Server running on port $port")
+            notifyState("Server running on port $activePort")
 
             threadPool.execute {
                 while (isRunning.get()) {
@@ -146,7 +162,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         val state = WebShareState(
             isRunning = isRunning.get(),
             ipAddress = getLocalIpAddress(),
-            port = port,
+            port = activePort,
             clientCount = connectedClients,
             lastActivity = activity,
             sessionToken = sessionToken

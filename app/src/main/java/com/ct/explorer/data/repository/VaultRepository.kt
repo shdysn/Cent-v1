@@ -139,7 +139,9 @@ class VaultRepository(private val context: Context) {
             val fallbackHex = newKeyBytes.joinToString("") { "%02x".format(it) }
             prefs.edit().putString(KEY_CIPHER_SECRET_LEGACY, fallbackHex).apply()
         }
-        return SecretKeySpec(newKeyBytes, "AES")
+        val secretKey = SecretKeySpec(newKeyBytes, "AES")
+        java.util.Arrays.fill(newKeyBytes, 0.toByte())
+        return secretKey
     }
 
     fun isPinSet(): Boolean {

@@ -568,13 +568,14 @@ object ArchiveHelper {
                 val entry = entries.nextElement()
                 val isAesEntry = entry.name.endsWith(ENCRYPTED_ENTRY_SUFFIX)
                 val cleanName = entry.name.removeSuffix(ENCRYPTED_ENTRY_SUFFIX)
+                val normalizedName = cleanName.replace('\\', '/').trimStart('/')
 
                 current++
-                if (selectedPaths != null && !selectedPaths.contains(cleanName) && !selectedPaths.contains(entry.name)) {
+                if (selectedPaths != null && !selectedPaths.contains(cleanName) && !selectedPaths.contains(normalizedName) && !selectedPaths.contains(entry.name)) {
                     continue
                 }
 
-                val outFile = File(destDir, cleanName)
+                val outFile = File(destDir, normalizedName)
                 val destCanonical = destDir.canonicalFile
                 val outCanonical = outFile.canonicalFile
                 if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
@@ -708,10 +709,12 @@ object ArchiveHelper {
         val salt = ByteArray(16).also { SecureRandom().nextBytes(it) }
         val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
         val keySpec = PBEKeySpec(password.toCharArray(), salt, 10_000, 256)
-        val secretKey = SecretKeySpec(
-            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(keySpec).encoded,
-            "AES"
-        )
+        val secretKeyBytes = try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(keySpec).encoded
+        } finally {
+            keySpec.clearPassword()
+        }
+        val secretKey = SecretKeySpec(secretKeyBytes, "AES")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
         val cipherText = cipher.doFinal(plainBytes)
@@ -734,10 +737,12 @@ object ArchiveHelper {
         val cipherText = encryptedPayload.copyOfRange(headerLen + 28, encryptedPayload.size)
 
         val keySpec = PBEKeySpec(password.toCharArray(), salt, 10_000, 256)
-        val secretKey = SecretKeySpec(
-            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(keySpec).encoded,
-            "AES"
-        )
+        val secretKeyBytes = try {
+            SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(keySpec).encoded
+        } finally {
+            keySpec.clearPassword()
+        }
+        val secretKey = SecretKeySpec(secretKeyBytes, "AES")
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, secretKey, GCMParameterSpec(128, iv))
         return cipher.doFinal(cipherText)

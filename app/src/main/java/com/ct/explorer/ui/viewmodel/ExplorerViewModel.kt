@@ -2744,18 +2744,19 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     override fun onCleared() {
         super.onCleared()
         audioProgressJob?.cancel()
-        mediaPlayer?.release()
+        runCatching { mediaPlayer?.stop() }
+        runCatching { mediaPlayer?.release() }
         mediaPlayer = null
-        activeFtpServer?.stop()
+        runCatching { activeFtpServer?.stop() }
         activeFtpServer = null
         if (_webShareServer.isInitialized()) {
-            _webShareServer.value.stop()
+            runCatching { _webShareServer.value.stop() }
         }
         if (_fastShareRepository.isInitialized()) {
-            _fastShareRepository.value.stopShareServer()
+            runCatching { _fastShareRepository.value.stopShareServer() }
         }
         if (_vaultRepository.isInitialized()) {
-            _vaultRepository.value.clearTempPreviewCache()
+            runCatching { _vaultRepository.value.clearTempPreviewCache() }
         }
     }
 
