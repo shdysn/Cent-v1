@@ -180,7 +180,13 @@ class VaultRepository(private val context: Context) {
         if (!vaultFile.exists()) return@withContext false
         try {
             if (!targetDir.exists()) targetDir.mkdirs()
-            val dest = File(targetDir, vaultFile.name)
+            val cleanName = vaultFile.name.replace(Regex("^\\d{13}_"), "")
+            var dest = File(targetDir, cleanName)
+            if (dest.exists()) {
+                val nameWithoutExt = cleanName.substringBeforeLast(".")
+                val ext = if (cleanName.contains(".")) ".${cleanName.substringAfterLast(".")}" else ""
+                dest = File(targetDir, "${nameWithoutExt}_restored$ext")
+            }
 
             FileInputStream(vaultFile).use { fis ->
                 val header = ByteArray(MAGIC_HEADER.size)

@@ -60,11 +60,29 @@ class DuplicateRepository(private val context: Context) {
 
             for ((_, matchingFiles) in hashMap) {
                 if (matchingFiles.size > 1) {
-                    // Sort by last modified: oldest is considered original
-                    val sorted = matchingFiles.sortedBy { it.lastModified() }
-                    val original = FileItem(sorted.first())
-                    val dupes = sorted.drop(1).map { FileItem(it) }
-                    duplicateGroups.add(DuplicateGroup(original, dupes))
+                    val verifiedSets = mutableListOf<MutableList<File>>()
+                    for (file in matchingFiles) {
+                        var added = false
+                        for (set in verifiedSets) {
+                            if (isExactDuplicate(set.first(), file)) {
+                                set.add(file)
+                                added = true
+                                break
+                            }
+                        }
+                        if (!added) {
+                            verifiedSets.add(mutableListOf(file))
+                        }
+                    }
+
+                    for (set in verifiedSets) {
+                        if (set.size > 1) {
+                            val sorted = set.sortedBy { it.lastModified() }
+                            val original = FileItem(sorted.first())
+                            val dupes = sorted.drop(1).map { FileItem(it) }
+                            duplicateGroups.add(DuplicateGroup(original, dupes))
+                        }
+                    }
                 }
             }
         }
@@ -103,6 +121,30 @@ class DuplicateRepository(private val context: Context) {
             md.digest().joinToString("") { "%02x".format(it) } + "_$length"
         } catch (e: Exception) {
             null
+        }
+    }
+
+    private fun isExactDuplicate(f1: File, f2: File): Boolean {
+        if (f1.length() != f2.length()) return false
+        return try {
+            FileInputStream(f1).use { in1 ->
+                FileInputStream(f2).use { in2 ->
+                    val buf1 = ByteArray(64 * 1024)
+                    val buf2 = ByteArray(64 * 1024)
+                    while (true) {
+                        val r1 = in1.read(buf1)
+                        val r2 = in2.read(buf2)
+                        if (r1 != r2) return false
+                        if (r1 <= 0) break
+                        for (i in 0 until r1) {
+                            if (buf1[i] != buf2[i]) return false
+                        }
+                    }
+                    true
+                }
+            }
+        } catch (_: Exception) {
+            false
         }
     }
 

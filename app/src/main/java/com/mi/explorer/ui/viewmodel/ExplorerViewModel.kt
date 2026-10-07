@@ -1876,10 +1876,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun playAudio(item: FileItem, playlist: List<FileItem> = emptyList()) {
         viewModelScope.launch {
             try {
-                mediaPlayer?.stop()
-                mediaPlayer?.release()
-                mediaPlayer = null
                 audioProgressJob?.cancel()
+                runCatching { mediaPlayer?.stop() }
+                runCatching { mediaPlayer?.release() }
+                mediaPlayer = null
 
                 val player = MediaPlayer()
                 java.io.FileInputStream(item.file).use { fis ->
@@ -1889,16 +1889,18 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
                 var title = item.name
                 var artist = "Unknown Artist"
-                var duration = player.duration
+                val duration = player.duration
 
+                var mmr: MediaMetadataRetriever? = null
                 try {
-                    val mmr = MediaMetadataRetriever()
+                    mmr = MediaMetadataRetriever()
                     mmr.setDataSource(item.file.absolutePath)
                     title = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: item.name
                     artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
-                    mmr.release()
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Fallback to filename
+                } finally {
+                    runCatching { mmr?.release() }
                 }
 
                 val fullList = if (playlist.isNotEmpty()) playlist else listOf(item)
@@ -2051,8 +2053,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun closeAudioPlayer() {
         audioProgressJob?.cancel()
-        mediaPlayer?.stop()
-        mediaPlayer?.release()
+        runCatching { mediaPlayer?.stop() }
+        runCatching { mediaPlayer?.release() }
         mediaPlayer = null
         _audioPlayerState.update { it.copy(isPlaying = false, isVisible = false, isExpanded = false) }
     }

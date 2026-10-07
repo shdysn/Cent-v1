@@ -575,6 +575,11 @@ object ArchiveHelper {
                 }
 
                 val outFile = File(destDir, cleanName)
+                val destCanonical = destDir.canonicalFile
+                val outCanonical = outFile.canonicalFile
+                if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+                    throw SecurityException("Zip Slip detected: Archive entry attempts to write outside destination ($cleanName)")
+                }
                 onProgress(current.toFloat() / total.toFloat(), cleanName)
 
                 if (entry.isDirectory) {
@@ -630,6 +635,11 @@ object ArchiveHelper {
 
                 val shouldExtract = selectedPaths == null || selectedPaths.contains(rawName)
                 val outFile = File(destDir, rawName)
+                val destCanonical = destDir.canonicalFile
+                val outCanonical = outFile.canonicalFile
+                if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+                    throw SecurityException("Tar Slip detected: Archive entry attempts to write outside destination ($rawName)")
+                }
                 onProgress(0.5f, rawName)
 
                 if (isDir) {

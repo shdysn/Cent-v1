@@ -748,7 +748,9 @@ class FileRepository(private val context: Context) {
             } else {
                 val item = FileItem(f)
                 val ext = item.extension
-                if (ext in listOf("tmp", "temp", "log", "thumb", "bak") || f.name.contains("cache", ignoreCase = true)) {
+                val isJunkExt = ext in listOf("tmp", "temp", "log", "bak", "thumb", "cache")
+                val isExplicitCacheFile = f.name.equals("cache", ignoreCase = true) || f.name.equals(".cache", ignoreCase = true)
+                if (isJunkExt || isExplicitCacheFile) {
                     junk.add(item)
                 }
                 if (item.size > 15L * 1024 * 1024) { // > 15MB

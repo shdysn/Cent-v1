@@ -390,8 +390,9 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
     }
 
     private fun serveDirectoryJson(pathStr: String, out: OutputStream) {
-        val target = if (pathStr.isNotEmpty()) File(pathStr) else rootDir
-        val safeTarget = if (target.exists() && target.isDirectory) target else rootDir
+        val rootCanonical = rootDir.canonicalFile
+        val target = if (pathStr.isNotEmpty()) File(pathStr).canonicalFile else rootCanonical
+        val safeTarget = if (target.path.startsWith(rootCanonical.path) && target.exists() && target.isDirectory) target else rootCanonical
 
         val items = safeTarget.listFiles()?.map { f ->
             val sizeStr = if (f.isDirectory) {
@@ -419,8 +420,9 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
     }
 
     private fun serveFileDownload(pathStr: String, out: OutputStream) {
-        val file = File(pathStr)
-        if (!file.exists() || !file.isFile || !file.canRead()) {
+        val rootCanonical = rootDir.canonicalFile
+        val file = File(pathStr).canonicalFile
+        if (!file.path.startsWith(rootCanonical.path) || !file.exists() || !file.isFile || !file.canRead()) {
             sendResponse(out, 404, "text/plain", "File Not Found".toByteArray())
             return
         }
@@ -450,10 +452,20 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         contentLength: Int,
         out: OutputStream
     ) {
-        val dir = File(targetDir)
+        val rootCanonical = rootDir.canonicalFile
+        val dir = File(targetDir).canonicalFile
+        if (!dir.path.startsWith(rootCanonical.path)) {
+            sendResponse(out, 403, "text/plain", "Upload Forbidden outside shared storage".toByteArray())
+            return
+        }
         if (!dir.exists()) dir.mkdirs()
 
-        val destFile = File(dir, fileName)
+        val safeFileName = File(fileName).name
+        val destFile = File(dir, safeFileName).canonicalFile
+        if (!destFile.path.startsWith(rootCanonical.path)) {
+            sendResponse(out, 403, "text/plain", "Invalid upload path".toByteArray())
+            return
+        }
         var written = 0L
 
         FileOutputStream(destFile).use { fos ->
