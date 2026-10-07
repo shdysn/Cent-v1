@@ -58,6 +58,41 @@ jobs:
         run: |
           ./gradlew assembleRelease bundleRelease --stacktrace --no-daemon
 
+      - name: Verify Release APK Size Budget (2 MB - 3 MB Target)
+        run: |
+          APK_PATH="app/build/outputs/apk/release/app-release.apk"
+          if [ ! -f "$APK_PATH" ]; then
+            echo "::error::Release APK not found at $APK_PATH"
+            exit 1
+          fi
+
+          APK_SIZE_BYTES=$(stat -c%s "$APK_PATH")
+          # Budget: 2.0 MB (2,000,000 bytes) to 3.0 MB (3,145,728 bytes)
+          MIN_BYTES=2000000
+          MAX_BYTES=3145728
+
+          APK_SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $APK_SIZE_BYTES/1048576}")
+          echo "=========================================="
+          echo "Release APK Size: ${APK_SIZE_MB} MB (${APK_SIZE_BYTES} bytes)"
+          echo "Target Budget   : 2.00 MB - 3.00 MB"
+          echo "=========================================="
+
+          echo "### 📦 Release APK Size Verification (2 MB - 3 MB Target)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target Range:** 2.00 MB – 3.00 MB" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actual Size:** **${APK_SIZE_MB} MB** (${APK_SIZE_BYTES} bytes)" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$APK_SIZE_BYTES" -gt "$MAX_BYTES" ]; then
+            echo "::error::Release APK size (${APK_SIZE_MB} MB) EXCEEDS the 3.0 MB target limit!"
+            echo "- ❌ **FAILED:** APK size exceeds 3.0 MB. Review app/build.gradle.kts and proguard-rules.pro to eliminate bloat." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          elif [ "$APK_SIZE_BYTES" -lt "$MIN_BYTES" ]; then
+            echo "::warning::Release APK size (${APK_SIZE_MB} MB) is below 2.0 MB. Please verify all resources and icons are bundled."
+            echo "- ⚠️ **NOTICE:** APK size is below 2.0 MB. Verification passed, ensure all assets are included." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::notice::Release APK size (${APK_SIZE_MB} MB) is strictly within the 2.0 MB - 3.0 MB target range!"
+            echo "- ✅ **PASSED:** Release APK size is within the 2.0 MB - 3.0 MB budget range." >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Collect Release Binaries
         run: |
           mkdir -p build-artifacts

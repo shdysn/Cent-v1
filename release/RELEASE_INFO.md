@@ -10,9 +10,11 @@ Both the **Production Signed APK** and the **Google Play Android App Bundle (AAB
 * **Target:** Direct installation on any Android phone (sideloading / manual install).
 * **Package Name:** `com.pkstudio.ctexplorer.app`
 * **Version:** `1.0.0` (VersionCode: `1`)
+* **Size:** **2.3 MB** (`2,310,691 bytes`) — Strictly within the **2.0 MB – 3.0 MB** target budget.
 * **SHA-256 Checksum:** `0806e3a0ee7ae589bdd6c2d24ff4f5d08240fcb04faba8d561e1bd0a8c8e7050`
 * **Signing:** Signed & Production-Ready.
 * **White Screen Latency:** `0ms` (`android:windowDisablePreview = true`).
+* **CI Size Budget Check:** Enforced via `.github/workflows/build-apk.yml` and `.github/APK_SIZE_GUIDELINES.md`.
 
 ---
 

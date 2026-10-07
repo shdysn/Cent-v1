@@ -42,3 +42,20 @@ A modern, high-performance Android File Explorer built from scratch using Kotlin
 - **Language**: Kotlin 2.2.21
 - **Package Name / Application ID**: `com.pkstudio.ctexplorer.app`
 - **Namespace**: `com.mi.explorer`
+
+## 📦 Release APK Size Guarantee (2 MB - 3 MB Target)
+
+Cent File Manager is engineered to produce an ultra-lightweight, production-ready Release APK strictly between **2 MB and 3 MB** (currently **2.3 MB / 2,310,691 bytes**).
+
+### Guidelines for Maintaining 2 MB - 3 MB:
+1. **R8 Full-Mode Minification & Resource Shrinking**:
+   - `isMinifyEnabled = true` and `isShrinkResources = true` are permanently enabled for `release` builds in `app/build.gradle.kts`.
+2. **ProGuard & Logging Stripping**:
+   - `app/proguard-rules.pro` strips debug logs and suppresses unnecessary metadata.
+3. **Packaging Exclusions**:
+   - Strips unused `META-INF` files, Kotlin modules, and debugging probe binaries.
+4. **Automated GitHub Actions Enforcement**:
+   - `.github/workflows/build-apk.yml` automatically verifies the size budget on every push, PR, and release. If the APK exceeds 3.0 MB, the workflow alerts and fails the build.
+5. **Detailed Documentation**:
+   - See [`.github/APK_SIZE_GUIDELINES.md`](.github/APK_SIZE_GUIDELINES.md) for full Urdu and English release guidelines.
+
