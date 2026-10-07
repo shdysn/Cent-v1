@@ -890,7 +890,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             var count = 0
             for (f in folders) {
-                if (fileRepository.delete(f).getOrDefault(false)) count++
+                if (fileRepository.deleteEmptyFolder(f).getOrDefault(false)) count++
             }
             showMessage("Removed $count empty folder(s)")
             startCleanScan()
@@ -1519,17 +1519,31 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun batchRename(pairs: List<Pair<FileItem, String>>) {
         viewModelScope.launch {
             var successCount = 0
+            var skippedCount = 0
             for ((item, newName) in pairs) {
-                if (item.name != newName) {
-                    val target = File(item.file.parentFile, newName)
+                val cleanName = newName.trim().replace("/", "").replace("\\", "").replace("\u0000", "")
+                if (cleanName.isNotBlank() && item.name != cleanName) {
+                    val parent = item.file.parentFile ?: continue
+                    val target = File(parent, cleanName)
+                    if (target.exists()) {
+                        skippedCount++
+                        continue
+                    }
                     if (item.file.renameTo(target)) {
                         successCount++
                     }
                 }
             }
-            showMessage("Renamed $successCount files successfully")
+            FileRepository.invalidateAllFileCaches()
+            refreshCurrentDirectory()
+            refreshStorage()
             clearSelection()
             loadDirectory(_storageState.value.currentDir)
+            if (skippedCount > 0) {
+                showMessage("Renamed $successCount files ($skippedCount skipped due to conflict)")
+            } else {
+                showMessage("Renamed $successCount files successfully")
+            }
         }
     }
 

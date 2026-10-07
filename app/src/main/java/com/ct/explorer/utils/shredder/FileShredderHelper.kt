@@ -125,9 +125,12 @@ object FileShredderHelper {
         }
 
         // Rename file to wipe metadata from directory entry table
-        val renamed = File(file.parentFile, "shredded_${UUID.randomUUID()}")
-        file.renameTo(renamed)
-        renamed.delete()
+        val parent = file.parentFile
+        val target = if (parent != null) {
+            val renamed = File(parent, "shredded_${UUID.randomUUID()}")
+            if (file.renameTo(renamed)) renamed else file
+        } else file
+        target.delete()
     }
 
     private fun shredDirectory(
@@ -144,8 +147,11 @@ object FileShredderHelper {
                 shredSingleFile(child, method, fileIndex, totalFiles, onProgress)
             }
         }
-        val renamedDir = File(dir.parentFile, "shredded_dir_${UUID.randomUUID()}")
-        dir.renameTo(renamedDir)
-        renamedDir.delete()
+        val parent = dir.parentFile
+        val targetDir = if (parent != null) {
+            val renamedDir = File(parent, "shredded_dir_${UUID.randomUUID()}")
+            if (dir.renameTo(renamedDir)) renamedDir else dir
+        } else dir
+        targetDir.delete()
     }
 }

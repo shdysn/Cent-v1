@@ -717,8 +717,8 @@ class FileRepository(private val context: Context) {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DCIM),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
-            context.filesDir,
-            context.getExternalFilesDir(null)
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
         ).filter { it.exists() && it.canRead() }.distinct()
 
         val junk = mutableListOf<FileItem>()
@@ -750,7 +750,17 @@ class FileRepository(private val context: Context) {
         if (depth > maxDepth) return
         if (dir.name.startsWith(".") || dir.name.equals("Android", ignoreCase = true)) return
         val files = dir.listFiles() ?: return
-        if (files.isEmpty() && dir != rootStorageDirectory) {
+
+        val standardFolderNames = setOf(
+            "Download", "Downloads", "DCIM", "Pictures", "Documents",
+            "Movies", "Music", "Android", "Ringtones", "Alarms",
+            "Notifications", "Podcasts", "Audiobooks"
+        )
+        val isProtectedFolder = dir == rootStorageDirectory ||
+                (dir.parentFile?.canonicalPath == rootStorageDirectory.canonicalPath && standardFolderNames.contains(dir.name)) ||
+                dir.parentFile == null
+
+        if (files.isEmpty() && !isProtectedFolder) {
             emptyFolders.add(FileItem(dir))
             return
         }
@@ -860,20 +870,56 @@ class FileRepository(private val context: Context) {
         }
     }
 
+    private fun generateNonConflictingFile(parentDir: File, originalName: String): File {
+        var candidate = File(parentDir, originalName)
+        if (!candidate.exists()) return candidate
+        val nameWithoutExt = originalName.substringBeforeLast(".")
+        val ext = if (originalName.contains(".")) ".${originalName.substringAfterLast(".")}" else ""
+        var counter = 1
+        while (candidate.exists()) {
+            candidate = File(parentDir, "$nameWithoutExt ($counter)$ext")
+            counter++
+        }
+        return candidate
+    }
+
+    suspend fun deleteEmptyFolder(item: FileItem): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            if (!item.isDirectory) return@withContext Result.failure(IllegalArgumentException("Item is not a folder"))
+            val files = item.file.listFiles()
+            if (files != null && files.isNotEmpty()) {
+                return@withContext Result.failure(IllegalStateException("Folder is not empty"))
+            }
+            val success = item.file.delete()
+            invalidateAllFileCaches()
+            invalidateCategoryCache()
+            invalidateFolderSize(item.file.parentFile)
+            Result.success(success)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun copy(sources: List<FileItem>, destinationDir: File): Result<Int> = withContext(Dispatchers.IO) {
         try {
+            if (!destinationDir.exists()) destinationDir.mkdirs()
             var count = 0
             val destCanonical = destinationDir.canonicalFile
             for (source in sources) {
+                val srcCanonical = source.file.canonicalFile
                 if (source.isDirectory) {
-                    val srcCanonical = source.file.canonicalFile
                     if (destCanonical.path == srcCanonical.path || destCanonical.path.startsWith(srcCanonical.path + File.separator)) {
                         return@withContext Result.failure(IllegalArgumentException("Cannot copy folder '${source.name}' into itself or its child directory"))
                     }
                 }
-                val dest = File(destinationDir, source.name)
+                val dest = if (srcCanonical.parentFile?.canonicalPath == destCanonical.path || File(destinationDir, source.name).exists()) {
+                    generateNonConflictingFile(destinationDir, source.name)
+                } else {
+                    File(destinationDir, source.name)
+                }
                 if (source.isDirectory) {
-                    source.file.copyRecursively(dest, overwrite = true)
+                    val copied = source.file.copyRecursively(dest, overwrite = true)
+                    if (!copied) throw java.io.IOException("Failed to copy directory: ${source.name}")
                 } else {
                     source.file.copyTo(dest, overwrite = true)
                 }
@@ -890,24 +936,44 @@ class FileRepository(private val context: Context) {
 
     suspend fun move(sources: List<FileItem>, destinationDir: File): Result<Int> = withContext(Dispatchers.IO) {
         try {
+            if (!destinationDir.exists()) destinationDir.mkdirs()
             var count = 0
             val destCanonical = destinationDir.canonicalFile
             for (source in sources) {
+                val srcCanonical = source.file.canonicalFile
                 if (source.isDirectory) {
-                    val srcCanonical = source.file.canonicalFile
                     if (destCanonical.path == srcCanonical.path || destCanonical.path.startsWith(srcCanonical.path + File.separator)) {
                         return@withContext Result.failure(IllegalArgumentException("Cannot move folder '${source.name}' into itself or its child directory"))
                     }
                 }
                 val dest = File(destinationDir, source.name)
+                val destCanonicalFile = dest.canonicalFile
+                if (srcCanonical.path == destCanonicalFile.path) {
+                    // Already in destination directory; nothing to move
+                    count++
+                    continue
+                }
                 val moved = source.file.renameTo(dest)
                 if (!moved) {
                     if (source.isDirectory) {
-                        source.file.copyRecursively(dest, overwrite = true)
-                        source.file.deleteRecursively()
+                        val copied = source.file.copyRecursively(dest, overwrite = true)
+                        if (copied) {
+                            source.file.deleteRecursively()
+                        } else {
+                            throw java.io.IOException("Failed to copy folder '${source.name}' across storage volumes")
+                        }
                     } else {
-                        source.file.copyTo(dest, overwrite = true)
-                        source.file.delete()
+                        val copied = try {
+                            source.file.copyTo(dest, overwrite = true)
+                            true
+                        } catch (e: Exception) {
+                            false
+                        }
+                        if (copied) {
+                            source.file.delete()
+                        } else {
+                            throw java.io.IOException("Failed to copy file '${source.name}' across storage volumes")
+                        }
                     }
                 }
                 invalidateFolderSize(source.file.parentFile)

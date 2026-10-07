@@ -166,19 +166,25 @@ object XapkInstaller {
         try {
             // Step 1: Extract OBB files if any
             if (xapkInfo.obbFileNames.isNotEmpty() && InAppPackageInstallerHelper.isValidPackageName(xapkInfo.packageName)) {
-                val obbDir = File(Environment.getExternalStorageDirectory(), "Android/obb/${xapkInfo.packageName}")
-                obbDir.mkdirs()
-                ZipFile(xapkInfo.file).use { zf ->
-                    for (obbEntryName in xapkInfo.obbFileNames) {
-                        val entry = zf.getEntry(obbEntryName) ?: continue
-                        val obbFile = File(obbDir, obbEntryName.substringAfterLast('/'))
-                        onProgress(0.1f, "Copying OBB: ${obbFile.name}")
-                        zf.getInputStream(entry).use { input ->
-                            FileOutputStream(obbFile).use { output ->
-                                input.copyTo(output)
+                try {
+                    val obbDir = File(Environment.getExternalStorageDirectory(), "Android/obb/${xapkInfo.packageName}")
+                    obbDir.mkdirs()
+                    ZipFile(xapkInfo.file).use { zf ->
+                        for (obbEntryName in xapkInfo.obbFileNames) {
+                            val entry = zf.getEntry(obbEntryName) ?: continue
+                            val safeName = obbEntryName.substringAfterLast('/').replace("..", "").replace("/", "")
+                            if (safeName.isBlank()) continue
+                            val obbFile = File(obbDir, safeName)
+                            onProgress(0.1f, "Copying OBB: ${obbFile.name}")
+                            zf.getInputStream(entry).use { input ->
+                                FileOutputStream(obbFile).use { output ->
+                                    input.copyTo(output)
+                                }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
 

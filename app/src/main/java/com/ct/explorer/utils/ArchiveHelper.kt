@@ -680,6 +680,11 @@ object ArchiveHelper {
     private fun extractGz(file: File, destDir: File, onProgress: (Float, String) -> Unit): Result<File> {
         val outFileName = file.name.removeSuffix(".gz")
         val outFile = File(destDir, outFileName)
+        val destCanonical = destDir.canonicalFile
+        val outCanonical = outFile.canonicalFile
+        if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+            return Result.failure(SecurityException("Archive entry attempts to write outside destination: $outFileName"))
+        }
         onProgress(0.1f, outFileName)
         GZIPInputStream(FileInputStream(file)).use { gzIn ->
             FileOutputStream(outFile).use { fos ->
@@ -697,8 +702,13 @@ object ArchiveHelper {
         } catch (_: Exception) {
             val info = inspect7zOrRar(file, file.extension.uppercase()).getOrNull()
             val entries = info?.entries ?: emptyList()
-            entries.forEachIndexed { idx, item ->
+            val destCanonical = destDir.canonicalFile
+            for ((idx, item) in entries.withIndex()) {
                 val outFile = File(destDir, item.fullPath)
+                val outCanonical = outFile.canonicalFile
+                if (!outCanonical.path.startsWith(destCanonical.path + File.separator) && outCanonical != destCanonical) {
+                    return Result.failure(SecurityException("Zip Slip detected: Archive entry attempts to write outside destination (${item.fullPath})"))
+                }
                 outFile.parentFile?.mkdirs()
                 onProgress((idx + 1).toFloat() / entries.size.coerceAtLeast(1), item.name)
                 FileInputStream(file).use { fis ->

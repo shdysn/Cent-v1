@@ -88,13 +88,16 @@ class VaultRepository(private val context: Context) {
      */
     suspend fun decryptToTempCacheFile(vaultFile: File): File? = withContext(Dispatchers.IO) {
         if (!vaultFile.exists()) return@withContext null
+        var tempOut: File? = null
         try {
             val previewDir = File(context.cacheDir, "vault_preview").apply {
                 if (!exists()) mkdirs()
             }
             val cleanName = vaultFile.name.replace(Regex("^\\d{13}_"), "")
-            val tempOut = File(previewDir, cleanName)
+            val targetTemp = File(previewDir, cleanName)
+            tempOut = targetTemp
 
+            var success = false
             FileInputStream(vaultFile).use { fis ->
                 val header = ByteArray(MAGIC_HEADER.size)
                 val readHeader = fis.read(header)
@@ -105,23 +108,26 @@ class VaultRepository(private val context: Context) {
                         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
                         cipher.init(Cipher.DECRYPT_MODE, vaultKey, IvParameterSpec(iv))
                         CipherInputStream(fis, cipher).use { cis ->
-                            FileOutputStream(tempOut).use { fos ->
+                            FileOutputStream(targetTemp).use { fos ->
                                 cis.copyTo(fos)
                             }
                         }
+                        success = true
                     } else {
                         return@withContext null
                     }
                 } else {
-                    FileOutputStream(tempOut).use { fos ->
+                    FileOutputStream(targetTemp).use { fos ->
                         if (readHeader > 0) fos.write(header, 0, readHeader)
                         fis.copyTo(fos)
                     }
+                    success = true
                 }
             }
-            tempOut
+            if (success) targetTemp else { targetTemp.delete(); null }
         } catch (e: Exception) {
             e.printStackTrace()
+            tempOut?.delete()
             null
         }
     }
@@ -145,12 +151,12 @@ class VaultRepository(private val context: Context) {
      */
     suspend fun addToVault(source: File): Boolean = withContext(Dispatchers.IO) {
         if (!source.exists() || source.isDirectory) return@withContext false
-        try {
-            val dest = File(filesDir, source.name)
-            val finalDest = if (dest.exists()) {
-                File(filesDir, "${System.currentTimeMillis()}_${source.name}")
-            } else dest
+        val dest = File(filesDir, source.name)
+        val finalDest = if (dest.exists()) {
+            File(filesDir, "${System.currentTimeMillis()}_${source.name}")
+        } else dest
 
+        try {
             val iv = ByteArray(16).apply { SecureRandom().nextBytes(this) }
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
             cipher.init(Cipher.ENCRYPT_MODE, vaultKey, IvParameterSpec(iv))
@@ -165,10 +171,16 @@ class VaultRepository(private val context: Context) {
                 }
             }
 
-            source.delete()
-            true
+            if (finalDest.exists() && finalDest.length() > 0) {
+                source.delete()
+                true
+            } else {
+                finalDest.delete()
+                false
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+            finalDest.delete()
             false
         }
     }
@@ -178,16 +190,19 @@ class VaultRepository(private val context: Context) {
      */
     suspend fun restoreFromVault(vaultFile: File, targetDir: File): Boolean = withContext(Dispatchers.IO) {
         if (!vaultFile.exists()) return@withContext false
+        var dest: File? = null
         try {
             if (!targetDir.exists()) targetDir.mkdirs()
             val cleanName = vaultFile.name.replace(Regex("^\\d{13}_"), "")
-            var dest = File(targetDir, cleanName)
-            if (dest.exists()) {
+            var targetDest = File(targetDir, cleanName)
+            if (targetDest.exists()) {
                 val nameWithoutExt = cleanName.substringBeforeLast(".")
                 val ext = if (cleanName.contains(".")) ".${cleanName.substringAfterLast(".")}" else ""
-                dest = File(targetDir, "${nameWithoutExt}_restored$ext")
+                targetDest = File(targetDir, "${nameWithoutExt}_restored$ext")
             }
+            dest = targetDest
 
+            var restoreSuccess = false
             FileInputStream(vaultFile).use { fis ->
                 val header = ByteArray(MAGIC_HEADER.size)
                 val readHeader = fis.read(header)
@@ -198,27 +213,34 @@ class VaultRepository(private val context: Context) {
                         val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
                         cipher.init(Cipher.DECRYPT_MODE, vaultKey, IvParameterSpec(iv))
                         CipherInputStream(fis, cipher).use { cis ->
-                            FileOutputStream(dest).use { fos ->
+                            FileOutputStream(targetDest).use { fos ->
                                 cis.copyTo(fos)
                             }
                         }
-                    } else {
-                        // Fallback copy
-                        FileOutputStream(dest).use { fos -> fis.copyTo(fos) }
+                        restoreSuccess = true
                     }
                 } else {
                     // Plaintext legacy fallback
-                    FileOutputStream(dest).use { fos ->
-                        fos.write(header, 0, readHeader)
+                    FileOutputStream(targetDest).use { fos ->
+                        if (readHeader > 0) {
+                            fos.write(header, 0, readHeader)
+                        }
                         fis.copyTo(fos)
                     }
+                    restoreSuccess = true
                 }
             }
 
-            vaultFile.delete()
-            true
+            if (restoreSuccess && targetDest.exists()) {
+                vaultFile.delete()
+                true
+            } else {
+                targetDest.delete()
+                false
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+            dest?.delete()
             false
         }
     }

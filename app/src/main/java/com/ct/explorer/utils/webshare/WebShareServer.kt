@@ -208,7 +208,8 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
                 serveFileDownload(targetPath, output)
             }
             method == "POST" && urlPath == "/api/upload" -> {
-                val uploadDir = queryParams["dir"]?.let { URLDecoder.decode(it, "UTF-8") } ?: rootDir.absolutePath
+                val rawDir = queryParams["dir"]?.let { URLDecoder.decode(it, "UTF-8") }
+                val uploadDir = if (rawDir.isNullOrBlank()) rootDir.absolutePath else rawDir
                 val fileName = queryParams["filename"]?.let { URLDecoder.decode(it, "UTF-8") } ?: "uploaded_${System.currentTimeMillis()}"
                 handleFileUpload(rawInput, uploadDir, fileName, contentLength, output)
             }
@@ -313,10 +314,10 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
                     let currentPath = '';
 
                     function loadDirectory(path) {
-                        currentPath = path;
                         fetch('/api/browse?path=' + encodeURIComponent(path))
                             .then(res => res.json())
                             .then(data => {
+                                currentPath = data.currentPath;
                                 renderBreadcrumbs(data.currentPath, data.breadcrumbs);
                                 renderFiles(data.items);
                             })
@@ -414,10 +415,16 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         sendResponse(out, 200, "text/html; charset=UTF-8", html.toByteArray(Charsets.UTF_8))
     }
 
+    private fun isWithinRoot(file: File, root: File): Boolean {
+        val fPath = try { file.canonicalPath } catch (_: Exception) { file.absolutePath }
+        val rPath = try { root.canonicalPath } catch (_: Exception) { root.absolutePath }
+        return fPath == rPath || fPath.startsWith(rPath + File.separator)
+    }
+
     private fun serveDirectoryJson(pathStr: String, out: OutputStream) {
         val rootCanonical = rootDir.canonicalFile
-        val target = if (pathStr.isNotEmpty()) File(pathStr).canonicalFile else rootCanonical
-        val safeTarget = if (target.path.startsWith(rootCanonical.path) && target.exists() && target.isDirectory) target else rootCanonical
+        val target = if (pathStr.isNotBlank()) File(pathStr).canonicalFile else rootCanonical
+        val safeTarget = if (isWithinRoot(target, rootCanonical) && target.exists() && target.isDirectory) target else rootCanonical
 
         val items = safeTarget.listFiles()?.map { f ->
             val sizeStr = if (f.isDirectory) {
@@ -447,7 +454,7 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
     private fun serveFileDownload(pathStr: String, out: OutputStream) {
         val rootCanonical = rootDir.canonicalFile
         val file = File(pathStr).canonicalFile
-        if (!file.path.startsWith(rootCanonical.path) || !file.exists() || !file.isFile || !file.canRead()) {
+        if (!isWithinRoot(file, rootCanonical) || !file.exists() || !file.isFile || !file.canRead()) {
             sendResponse(out, 404, "text/plain", "File Not Found".toByteArray())
             return
         }
@@ -478,35 +485,83 @@ class WebShareServer(private val context: Context, private val port: Int = 8080)
         out: OutputStream
     ) {
         val rootCanonical = rootDir.canonicalFile
-        val dir = File(targetDir).canonicalFile
-        if (!dir.path.startsWith(rootCanonical.path)) {
+        val dir = if (targetDir.isBlank()) rootCanonical else File(targetDir).canonicalFile
+        if (!isWithinRoot(dir, rootCanonical)) {
             sendResponse(out, 403, "text/plain", "Upload Forbidden outside shared storage".toByteArray())
             return
         }
         if (!dir.exists()) dir.mkdirs()
 
-        val safeFileName = File(fileName).name
-        val destFile = File(dir, safeFileName).canonicalFile
-        if (!destFile.path.startsWith(rootCanonical.path)) {
-            sendResponse(out, 403, "text/plain", "Invalid upload path".toByteArray())
-            return
+        val sanitized = File(fileName).name
+            .replace("/", "")
+            .replace("\\", "")
+            .replace("\u0000", "")
+            .trim()
+        val safeFileName = if (sanitized.isEmpty() || sanitized == "." || sanitized == "..") {
+            "uploaded_${System.currentTimeMillis()}"
+        } else {
+            sanitized
         }
-        var written = 0L
 
-        FileOutputStream(destFile).use { fos ->
-            val buffer = ByteArray(32 * 1024)
-            var bytesToRead = contentLength
-            while (bytesToRead > 0) {
-                val read = socketInput.read(buffer, 0, Math.min(buffer.size, bytesToRead))
-                if (read == -1) break
-                fos.write(buffer, 0, read)
-                written += read
-                bytesToRead -= read
+        var destFile = File(dir, safeFileName).canonicalFile
+        if (destFile.exists()) {
+            val nameWithoutExt = safeFileName.substringBeforeLast(".")
+            val ext = if (safeFileName.contains(".")) ".${safeFileName.substringAfterLast(".")}" else ""
+            var counter = 1
+            while (destFile.exists()) {
+                destFile = File(dir, "$nameWithoutExt ($counter)$ext").canonicalFile
+                counter++
             }
         }
 
-        val response = """{"status":"success","savedAs":${quoteJson(destFile.name)},"bytes":$written}"""
-        sendResponse(out, 200, "application/json", response.toByteArray(Charsets.UTF_8))
+        if (!isWithinRoot(destFile, rootCanonical)) {
+            sendResponse(out, 403, "text/plain", "Invalid upload path".toByteArray())
+            return
+        }
+
+        val tempFile = File(dir, ".tmp_upload_${System.currentTimeMillis()}_${java.util.UUID.randomUUID()}")
+        var written = 0L
+        var success = false
+
+        try {
+            FileOutputStream(tempFile).use { fos ->
+                val buffer = ByteArray(32 * 1024)
+                var bytesToRead = contentLength
+                while (bytesToRead > 0) {
+                    val read = socketInput.read(buffer, 0, Math.min(buffer.size, bytesToRead))
+                    if (read == -1) break
+                    fos.write(buffer, 0, read)
+                    written += read
+                    bytesToRead -= read
+                }
+                fos.flush()
+            }
+
+            if (contentLength > 0 && written < contentLength) {
+                tempFile.delete()
+                sendResponse(out, 400, "text/plain", "Upload aborted or incomplete transfer".toByteArray())
+                return
+            }
+
+            if (tempFile.renameTo(destFile)) {
+                success = true
+            } else {
+                tempFile.copyTo(destFile, overwrite = true)
+                tempFile.delete()
+                success = true
+            }
+        } catch (e: Exception) {
+            tempFile.delete()
+            sendResponse(out, 500, "text/plain", "Upload failed: ${e.message}".toByteArray())
+            return
+        }
+
+        if (success) {
+            val response = """{"status":"success","savedAs":${quoteJson(destFile.name)},"bytes":$written}"""
+            sendResponse(out, 200, "application/json", response.toByteArray(Charsets.UTF_8))
+        } else {
+            sendResponse(out, 500, "text/plain", "Failed to finalize uploaded file".toByteArray())
+        }
     }
 
     private fun sendResponse(out: OutputStream, code: Int, contentType: String, data: ByteArray) {

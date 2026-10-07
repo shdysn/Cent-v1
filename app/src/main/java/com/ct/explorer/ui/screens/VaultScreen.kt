@@ -1,6 +1,7 @@
 package com.ct.explorer.ui.screens
 
 import android.app.Activity
+import androidx.activity.compose.BackHandler
 import com.ct.explorer.utils.BiometricHelper
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -80,6 +81,17 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
         }
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.lockVault()
+        }
+    }
+
+    BackHandler(enabled = true) {
+        viewModel.lockVault()
+        viewModel.handleBackPress()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -98,7 +110,10 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = { viewModel.handleBackPress() }) {
+                    IconButton(onClick = {
+                        viewModel.lockVault()
+                        viewModel.handleBackPress()
+                    }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },

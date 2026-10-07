@@ -31,14 +31,15 @@ class DuplicateRepository(private val context: Context) {
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES),
-            File(context.filesDir, "CentExplorer")
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
         ).filter { it.exists() && it.canRead() }
 
-        val allFiles = mutableListOf<File>()
+        val collectedFiles = mutableListOf<File>()
         for (dir in searchDirs) {
-            collectFiles(dir, allFiles, maxFiles = 1000, depth = 0, maxDepth = 3)
+            collectFiles(dir, collectedFiles, maxFiles = 1000, depth = 0, maxDepth = 3)
         }
+
+        val allFiles = collectedFiles.distinctBy { it.canonicalPath }
 
         // Group 1: Group by file size (> 10KB)
         val sizeMap = allFiles
@@ -50,8 +51,11 @@ class DuplicateRepository(private val context: Context) {
 
         // Group 2: For items with same size, compute partial hash (fast)
         for ((_, candidateFiles) in sizeMap) {
+            val distinctCandidates = candidateFiles.distinctBy { it.canonicalPath }
+            if (distinctCandidates.size < 2) continue
+
             val hashMap = mutableMapOf<String, MutableList<File>>()
-            for (file in candidateFiles) {
+            for (file in distinctCandidates) {
                 val hash = getPartialHash(file)
                 if (hash != null) {
                     hashMap.getOrPut(hash) { mutableListOf() }.add(file)
@@ -64,6 +68,10 @@ class DuplicateRepository(private val context: Context) {
                     for (file in matchingFiles) {
                         var added = false
                         for (set in verifiedSets) {
+                            if (set.any { it.canonicalPath == file.canonicalPath }) {
+                                added = true
+                                break
+                            }
                             if (isExactDuplicate(set.first(), file)) {
                                 set.add(file)
                                 added = true
@@ -125,6 +133,7 @@ class DuplicateRepository(private val context: Context) {
     }
 
     private fun isExactDuplicate(f1: File, f2: File): Boolean {
+        if (f1.canonicalPath == f2.canonicalPath) return false
         if (f1.length() != f2.length()) return false
         return try {
             java.io.BufferedInputStream(FileInputStream(f1)).use { in1 ->

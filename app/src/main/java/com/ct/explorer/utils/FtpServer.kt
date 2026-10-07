@@ -297,7 +297,7 @@ class FtpServer(
                         }
                         "DELE" -> {
                             val target = resolveTargetFile(rootDir, currentDirectory, argument)
-                            if (target.exists() && target.isFile && target.delete()) {
+                            if (target != rootDir && target.exists() && target.isFile && target.delete()) {
                                 sendResponse(250, "File deleted.")
                             } else {
                                 sendResponse(550, "Delete failed.")
@@ -305,7 +305,7 @@ class FtpServer(
                         }
                         "MKD", "XMKD" -> {
                             val target = resolveTargetFile(rootDir, currentDirectory, argument)
-                            if (target.mkdirs()) {
+                            if (target != rootDir && target.mkdirs()) {
                                 sendResponse(257, "\"$argument\" created.")
                             } else {
                                 sendResponse(550, "Create directory failed.")
@@ -313,10 +313,10 @@ class FtpServer(
                         }
                         "RMD", "XRMD" -> {
                             val target = resolveTargetFile(rootDir, currentDirectory, argument)
-                            if (target.exists() && target.isDirectory && target.deleteRecursively()) {
+                            if (target != rootDir && target.exists() && target.isDirectory && target.deleteRecursively()) {
                                 sendResponse(250, "Directory removed.")
                             } else {
-                                sendResponse(550, "Remove directory failed.")
+                                sendResponse(550, "Remove directory failed: permission denied or root.")
                             }
                         }
                         "RNFR" -> {
@@ -421,22 +421,21 @@ class FtpServer(
         if (clean.startsWith("\"") && clean.endsWith("\"") && clean.length >= 2) {
             clean = clean.substring(1, clean.length - 1)
         }
+        val rootCanonical = try { root.canonicalFile } catch (_: Exception) { root }
+        val currentCanonical = try { current.canonicalFile } catch (_: Exception) { current }
         val target = if (clean.startsWith("/")) {
-            File(root, clean.removePrefix("/"))
+            File(rootCanonical, clean.removePrefix("/"))
         } else {
-            File(current, clean)
+            File(currentCanonical, clean)
         }
-        val canonical = try { target.canonicalFile } catch (e: Exception) { target }
-        return if (isChildOrSame(root, canonical)) canonical else root
+        val canonical = try { target.canonicalFile } catch (_: Exception) { target }
+        return if (isChildOrSame(rootCanonical, canonical)) canonical else rootCanonical
     }
 
     private fun isChildOrSame(parent: File, child: File): Boolean {
-        var p: File? = child
-        while (p != null) {
-            if (p.absolutePath == parent.absolutePath) return true
-            p = p.parentFile
-        }
-        return false
+        val parentCanonical = try { parent.canonicalPath } catch (_: Exception) { parent.absolutePath }
+        val childCanonical = try { child.canonicalPath } catch (_: Exception) { child.absolutePath }
+        return childCanonical == parentCanonical || childCanonical.startsWith(parentCanonical + File.separator)
     }
 
     private fun getRelativePath(root: File, current: File): String {

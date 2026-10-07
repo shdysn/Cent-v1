@@ -104,14 +104,23 @@ class TrashRepository(private val context: Context) {
             } else {
                 // Fallback copy then delete if across filesystems
                 if (fileItem.file.isDirectory) {
-                    fileItem.file.copyRecursively(destFile, overwrite = true) && fileItem.file.deleteRecursively()
+                    val copied = fileItem.file.copyRecursively(destFile, overwrite = true)
+                    if (copied) fileItem.file.deleteRecursively() else false
                 } else {
-                    fileItem.file.copyTo(destFile, overwrite = true)
-                    fileItem.file.delete()
+                    val copied = try {
+                        fileItem.file.copyTo(destFile, overwrite = true)
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (copied) fileItem.file.delete() else false
                 }
             }
 
             if (!moved) {
+                if (destFile.exists()) {
+                    if (destFile.isDirectory) destFile.deleteRecursively() else destFile.delete()
+                }
                 return@withContext Result.failure(Exception("Could not move file to Recycle Bin"))
             }
 
@@ -158,14 +167,23 @@ class TrashRepository(private val context: Context) {
                 true
             } else {
                 if (sourceFile.isDirectory) {
-                    sourceFile.copyRecursively(destFile, overwrite = true) && sourceFile.deleteRecursively()
+                    val copied = sourceFile.copyRecursively(destFile, overwrite = true)
+                    if (copied) sourceFile.deleteRecursively() else false
                 } else {
-                    sourceFile.copyTo(destFile, overwrite = true)
-                    sourceFile.delete()
+                    val copied = try {
+                        sourceFile.copyTo(destFile, overwrite = true)
+                        true
+                    } catch (_: Exception) {
+                        false
+                    }
+                    if (copied) sourceFile.delete() else false
                 }
             }
 
             if (!restored) {
+                if (destFile.exists()) {
+                    if (destFile.isDirectory) destFile.deleteRecursively() else destFile.delete()
+                }
                 return@withContext Result.failure(Exception("Failed to restore file"))
             }
 
