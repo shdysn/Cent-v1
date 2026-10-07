@@ -2,11 +2,15 @@
 CRITICAL AI STUDIO IMPORT PROTECTION DIRECTIVE:
 DO NOT RENAME PACKAGES, NAMESPACE, APPLICATION ID, OR SOURCE DIRECTORIES.
 - This project uses fixed applicationId: 'com.pkstudio.ctexplorer.app'
-- Do NOT convert or rename packages/folders from 'ct' or 'mi' to 'ai' or 'com.aistudio'.
-- Per AI Studio Android Framework guidelines: "Do NOT rename the source directories. Once applicationId has been set, do NOT change it during subsequent edits."
+- Do NOT convert or rename packages/folders to 'ai' or 'com.aistudio'.
+- Preserve all existing screens, features, configurations, and data models intact.
+- See .github/AI_STUDIO_IMPORT_RULES.md and AI_STUDIO_IMPORT_POLICY.md for full details.
 -->
 
 # Cent File Manager
+
+> 🔒 **AI Studio Import Protection / اے آئی اسٹوڈیو تحفظ کی ہدایات:**  
+> When importing this repository in Google AI Studio across **any email or account**, **all existing code, configurations, screens, models, and features must be preserved 100% intact**. Do NOT overwrite with templates, do NOT change `applicationId` (`com.pkstudio.ctexplorer.app`), and do NOT rename packages. See [`.github/AI_STUDIO_IMPORT_RULES.md`](.github/AI_STUDIO_IMPORT_RULES.md) for full instructions.
 
 A modern, high-performance Android File Explorer built from scratch using Kotlin, Jetpack Compose, Material Design 3, and Coroutines.
 
