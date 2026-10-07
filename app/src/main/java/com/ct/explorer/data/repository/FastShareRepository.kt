@@ -14,6 +14,9 @@ import java.net.Socket
 import java.net.URLDecoder
 import java.net.URLEncoder
 
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
 data class FastShareState(
     val isServerRunning: Boolean = false,
     val hostIp: String = "127.0.0.1",
@@ -30,6 +33,8 @@ class FastShareRepository(private val context: Context) {
     private var serverSocket: ServerSocket? = null
     private var isRunning = false
     private var sharedFilesList = listOf<FileItem>()
+    private var clientExecutor: ExecutorService? = null
+    private var serverThread: Thread? = null
 
     fun getLocalIpAddress(): String {
         try {
@@ -88,18 +93,31 @@ class FastShareRepository(private val context: Context) {
 
             serverSocket = sSocket
             isRunning = true
+            clientExecutor = Executors.newFixedThreadPool(6)
             val ip = getLocalIpAddress()
 
-            Thread {
+            serverThread = Thread {
                 while (isRunning) {
                     try {
                         val client = serverSocket?.accept() ?: break
-                        handleClient(client, onFileDownloaded)
+                        client.soTimeout = 15000 // 15s timeout
+                        val exec = clientExecutor
+                        if (exec != null && !exec.isShutdown) {
+                            exec.submit {
+                                handleClient(client, onFileDownloaded)
+                            }
+                        } else {
+                            try { client.close() } catch (_: Exception) {}
+                        }
                     } catch (e: Exception) {
                         if (!isRunning) break
                     }
                 }
-            }.start()
+            }.apply {
+                name = "FastShareServerThread"
+                isDaemon = true
+                start()
+            }
 
             Result.success(Pair("http://$ip:$actualPort", actualPort))
         } catch (e: Exception) {
@@ -108,71 +126,75 @@ class FastShareRepository(private val context: Context) {
     }
 
     private fun handleClient(socket: Socket, onFileDownloaded: (String) -> Unit) {
-        Thread {
-            try {
-                val input = BufferedReader(InputStreamReader(socket.getInputStream()))
-                val output = BufferedOutputStream(socket.getOutputStream())
+        try {
+            val input = BufferedReader(InputStreamReader(socket.getInputStream()))
+            val output = BufferedOutputStream(socket.getOutputStream())
 
-                val requestLine = input.readLine() ?: return@Thread
-                val parts = requestLine.split(" ")
-                if (parts.size < 2) return@Thread
+            val requestLine = input.readLine() ?: run {
+                socket.close()
+                return
+            }
+            val parts = requestLine.split(" ")
+            if (parts.size < 2) {
+                socket.close()
+                return
+            }
 
-                val path = parts[1]
+            val path = parts[1]
 
-                if (path.startsWith("/download")) {
-                    val query = path.substringAfter("?", "")
-                    val fileNameEncoded = query.substringAfter("file=", "").substringBefore("&")
-                    val fileName = try {
-                        URLDecoder.decode(fileNameEncoded, "UTF-8")
-                    } catch (e: Exception) {
-                        fileNameEncoded
-                    }
-
-                    val target = sharedFilesList.find {
-                        it.name == fileName || it.name.equals(fileName, ignoreCase = true) || it.name == fileNameEncoded
-                    }
-
-                    if (target != null && target.file.exists()) {
-                        onFileDownloaded(target.name)
-                        val length = target.file.length()
-                        val header = "HTTP/1.1 200 OK\r\n" +
-                                "Content-Type: application/octet-stream\r\n" +
-                                "Content-Length: $length\r\n" +
-                                "Content-Disposition: attachment; filename=\"${URLEncoder.encode(target.name, "UTF-8")}\"\r\n" +
-                                "Connection: close\r\n\r\n"
-                        output.write(header.toByteArray())
-
-                        FileInputStream(target.file).use { fis ->
-                            val buf = ByteArray(64 * 1024)
-                            var read: Int
-                            while (fis.read(buf).also { read = it } != -1) {
-                                output.write(buf, 0, read)
-                            }
-                        }
-                        output.flush()
-                    } else {
-                        val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found"
-                        output.write(notFound.toByteArray())
-                        output.flush()
-                    }
-                } else {
-                    // Serve HTML Web Interface
-                    val html = buildHtmlPage(sharedFilesList)
-                    val bytes = html.toByteArray(Charsets.UTF_8)
-                    val header = "HTTP/1.1 200 OK\r\n" +
-                            "Content-Type: text/html; charset=UTF-8\r\n" +
-                            "Content-Length: ${bytes.size}\r\n" +
-                            "Connection: close\r\n\r\n"
-                    output.write(header.toByteArray())
-                    output.write(bytes)
-                    output.flush()
+            if (path.startsWith("/download")) {
+                val query = path.substringAfter("?", "")
+                val fileNameEncoded = query.substringAfter("file=", "").substringBefore("&")
+                val fileName = try {
+                    URLDecoder.decode(fileNameEncoded, "UTF-8")
+                } catch (e: Exception) {
+                    fileNameEncoded
                 }
 
-                socket.close()
-            } catch (e: Exception) {
-                try { socket.close() } catch (ignored: Exception) {}
+                val target = sharedFilesList.find {
+                    it.name == fileName || it.name.equals(fileName, ignoreCase = true) || it.name == fileNameEncoded
+                }
+
+                if (target != null && target.file.exists()) {
+                    onFileDownloaded(target.name)
+                    val length = target.file.length()
+                    val header = "HTTP/1.1 200 OK\r\n" +
+                            "Content-Type: application/octet-stream\r\n" +
+                            "Content-Length: $length\r\n" +
+                            "Content-Disposition: attachment; filename=\"${URLEncoder.encode(target.name, "UTF-8")}\"\r\n" +
+                            "Connection: close\r\n\r\n"
+                    output.write(header.toByteArray())
+
+                    FileInputStream(target.file).use { fis ->
+                        val buf = ByteArray(64 * 1024)
+                        var read: Int
+                        while (fis.read(buf).also { read = it } != -1) {
+                            output.write(buf, 0, read)
+                        }
+                    }
+                    output.flush()
+                } else {
+                    val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nNot Found"
+                    output.write(notFound.toByteArray())
+                    output.flush()
+                }
+            } else {
+                // Serve HTML Web Interface
+                val html = buildHtmlPage(sharedFilesList)
+                val bytes = html.toByteArray(Charsets.UTF_8)
+                val header = "HTTP/1.1 200 OK\r\n" +
+                        "Content-Type: text/html; charset=UTF-8\r\n" +
+                        "Content-Length: ${bytes.size}\r\n" +
+                        "Connection: close\r\n\r\n"
+                output.write(header.toByteArray())
+                output.write(bytes)
+                output.flush()
             }
-        }.start()
+
+            socket.close()
+        } catch (e: Exception) {
+            try { socket.close() } catch (ignored: Exception) {}
+        }
     }
 
 
@@ -239,9 +261,15 @@ class FastShareRepository(private val context: Context) {
         isRunning = false
         try {
             serverSocket?.close()
-        } catch (e: Exception) {
-            // ignore
-        }
+        } catch (_: Exception) {}
         serverSocket = null
+        try {
+            serverThread?.interrupt()
+        } catch (_: Exception) {}
+        serverThread = null
+        try {
+            clientExecutor?.shutdownNow()
+        } catch (_: Exception) {}
+        clientExecutor = null
     }
 }

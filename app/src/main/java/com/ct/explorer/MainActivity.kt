@@ -67,6 +67,11 @@ class MainActivity : ComponentActivity() {
         com.ct.explorer.utils.InstallerStatusBus.attachActivity(this)
     }
 
+    override fun onStop() {
+        super.onStop()
+        viewModel.lockVault()
+    }
+
     override fun onDestroy() {
         com.ct.explorer.utils.InstallerStatusBus.detachActivity(this)
         super.onDestroy()

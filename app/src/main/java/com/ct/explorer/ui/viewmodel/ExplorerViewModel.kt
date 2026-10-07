@@ -2436,6 +2436,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             showMessage("Copied ${sourceItems.size} items to Pane B (${targetDir.name})")
             clearSelection()
             loadDirectoryPaneB(targetDir)
+            refreshCurrentDirectory()
         }
     }
 
@@ -2461,6 +2462,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             showMessage("Copied ${sourceItems.size} items to Pane A (${targetDir.name})")
             _paneBState.update { it.copy(selectedItems = emptySet()) }
             refreshCurrentDirectory()
+            loadDirectoryPaneB(_paneBState.value.currentDir)
         }
     }
 

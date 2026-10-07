@@ -2,18 +2,24 @@ package com.ct.explorer.data.repository
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import com.ct.explorer.data.model.FileItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.security.KeyStore
 import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.CipherInputStream
 import javax.crypto.CipherOutputStream
+import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
+import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
@@ -30,20 +36,110 @@ class VaultRepository(private val context: Context) {
         if (!exists()) mkdirs()
     }
 
+    init {
+        clearTempPreviewCache()
+    }
+
     private val vaultKey: SecretKey by lazy {
         getOrCreateVaultKey()
     }
 
-    private fun getOrCreateVaultKey(): SecretKey {
-        var keyHex = prefs.getString(KEY_CIPHER_SECRET, null)
-        if (keyHex == null) {
-            val keyBytes = ByteArray(32)
-            SecureRandom().nextBytes(keyBytes)
-            keyHex = keyBytes.joinToString("") { "%02x".format(it) }
-            prefs.edit().putString(KEY_CIPHER_SECRET, keyHex).apply()
+    private fun getOrCreateKeyStoreMaster(): SecretKey? {
+        return try {
+            val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
+            if (!keyStore.containsAlias(KEYSTORE_ALIAS)) {
+                val keyGen = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+                val spec = KeyGenParameterSpec.Builder(
+                    KEYSTORE_ALIAS,
+                    KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT
+                )
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build()
+                keyGen.init(spec)
+                keyGen.generateKey()
+            }
+            keyStore.getKey(KEYSTORE_ALIAS, null) as? SecretKey
+        } catch (e: Exception) {
+            null
         }
-        val bytes = keyHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-        return SecretKeySpec(bytes, "AES")
+    }
+
+    private fun encryptWithKeyStore(rawBytes: ByteArray): Pair<String, String>? {
+        return try {
+            val masterKey = getOrCreateKeyStoreMaster() ?: return null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.ENCRYPT_MODE, masterKey)
+            val iv = cipher.iv
+            val enc = cipher.doFinal(rawBytes)
+            Pair(
+                Base64.encodeToString(enc, Base64.NO_WRAP),
+                Base64.encodeToString(iv, Base64.NO_WRAP)
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun decryptWithKeyStore(encBase64: String, ivBase64: String): ByteArray? {
+        return try {
+            val masterKey = getOrCreateKeyStoreMaster() ?: return null
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            val iv = Base64.decode(ivBase64, Base64.NO_WRAP)
+            val enc = Base64.decode(encBase64, Base64.NO_WRAP)
+            cipher.init(Cipher.DECRYPT_MODE, masterKey, GCMParameterSpec(128, iv))
+            cipher.doFinal(enc)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun getOrCreateVaultKey(): SecretKey {
+        // 1. Try to load from KeyStore-encrypted preferences
+        val encBase64 = prefs.getString(KEY_CIPHER_SECRET_ENC, null)
+        val ivBase64 = prefs.getString(KEY_CIPHER_SECRET_IV, null)
+        if (encBase64 != null && ivBase64 != null) {
+            val rawBytes = decryptWithKeyStore(encBase64, ivBase64)
+            if (rawBytes != null && rawBytes.size == 32) {
+                return SecretKeySpec(rawBytes, "AES")
+            }
+        }
+
+        // 2. Check for legacy unencrypted key to migrate seamlessly
+        val legacyHex = prefs.getString(KEY_CIPHER_SECRET_LEGACY, null)
+        if (legacyHex != null) {
+            try {
+                val legacyBytes = legacyHex.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                if (legacyBytes.size == 32) {
+                    val encrypted = encryptWithKeyStore(legacyBytes)
+                    if (encrypted != null) {
+                        prefs.edit()
+                            .putString(KEY_CIPHER_SECRET_ENC, encrypted.first)
+                            .putString(KEY_CIPHER_SECRET_IV, encrypted.second)
+                            .remove(KEY_CIPHER_SECRET_LEGACY)
+                            .apply()
+                    }
+                    return SecretKeySpec(legacyBytes, "AES")
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. Generate a brand new 256-bit AES vault key
+        val newKeyBytes = ByteArray(32).apply { SecureRandom().nextBytes(this) }
+        val encrypted = encryptWithKeyStore(newKeyBytes)
+        if (encrypted != null) {
+            prefs.edit()
+                .putString(KEY_CIPHER_SECRET_ENC, encrypted.first)
+                .putString(KEY_CIPHER_SECRET_IV, encrypted.second)
+                .remove(KEY_CIPHER_SECRET_LEGACY)
+                .apply()
+        } else {
+            // Fallback for rare systems lacking AndroidKeyStore
+            val fallbackHex = newKeyBytes.joinToString("") { "%02x".format(it) }
+            prefs.edit().putString(KEY_CIPHER_SECRET_LEGACY, fallbackHex).apply()
+        }
+        return SecretKeySpec(newKeyBytes, "AES")
     }
 
     fun isPinSet(): Boolean {
@@ -263,6 +359,10 @@ class VaultRepository(private val context: Context) {
         private const val KEY_PIN_HASH = "vault_pin_hash"
         private const val KEY_SECURITY_ANSWER = "vault_security_answer"
         private const val KEY_BIOMETRIC_ENABLED = "vault_biometric_enabled"
-        private const val KEY_CIPHER_SECRET = "vault_cipher_secret_key"
+        private const val ANDROID_KEYSTORE = "AndroidKeyStore"
+        private const val KEYSTORE_ALIAS = "CentVaultMasterKey_v1"
+        private const val KEY_CIPHER_SECRET_ENC = "vault_cipher_secret_enc"
+        private const val KEY_CIPHER_SECRET_IV = "vault_cipher_secret_iv"
+        private const val KEY_CIPHER_SECRET_LEGACY = "vault_cipher_secret_key"
     }
 }
