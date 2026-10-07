@@ -432,7 +432,13 @@ fun MainScreen(
                             val ok = com.ct.explorer.utils.ShortcutHelper.requestPinStorageWidget(context)
                             viewModel.showMessage(if (ok) "Home Screen Storage Widget prompt opened!" else "Long-press Home Screen -> Widgets -> Cent File Manager")
                         },
-                        onBatchRename = { showBatchRenameDialog = true },
+                        onBatchRename = {
+                            if (storageState.selectedItems.size >= 2) {
+                                showBatchRenameDialog = true
+                            } else {
+                                viewModel.showMessage("Select 2 or more files to batch rename")
+                            }
+                        },
                         onNavigateTo = { viewModel.loadDirectory(it, addToHistory = true) },
                         onNavigateUp = {
                             val parent = storageState.currentDir.parentFile

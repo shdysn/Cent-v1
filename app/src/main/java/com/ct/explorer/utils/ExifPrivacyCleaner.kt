@@ -124,6 +124,7 @@ object ExifPrivacyCleaner {
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "image/*"
                     putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = android.content.ClipData.newRawUri(null, uri)
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 val chooser = Intent.createChooser(shareIntent, "Share Clean Photo (No GPS / EXIF)").apply {

@@ -445,12 +445,13 @@ class AppsRepository(private val context: Context) {
 
             val backupDir = getBackupDirectory()
             val cleanAppName = app.appName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            val cleanVersionName = app.versionName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             val vCode = app.versionCode
 
             // If app has split APKs, bundle base + splits + manifest.json into a complete .apks archive
             val splits = appInfo.splitSourceDirs
             if (splits != null && splits.isNotEmpty()) {
-                val bundleFile = File(backupDir, "${cleanAppName}_v${app.versionName}_vc${vCode}.apks")
+                val bundleFile = File(backupDir, "${cleanAppName}_v${cleanVersionName}_vc${vCode}.apks")
                 java.util.zip.ZipOutputStream(java.io.FileOutputStream(bundleFile)).use { zos ->
                     // Write manifest.json so XapkInstaller & parseBundleApkFile have instant metadata
                     val manifestJson = org.json.JSONObject().apply {
@@ -481,7 +482,7 @@ class AppsRepository(private val context: Context) {
                 return@withContext Result.success(bundleFile)
             }
 
-            val destFile = File(backupDir, "${cleanAppName}_v${app.versionName}_vc${vCode}.apk")
+            val destFile = File(backupDir, "${cleanAppName}_v${cleanVersionName}_vc${vCode}.apk")
             sourceApk.copyTo(destFile, overwrite = true)
             Result.success(destFile)
         } catch (e: Exception) {

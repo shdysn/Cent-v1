@@ -112,7 +112,6 @@ fun PdfViewerScreen(
         onDispose {
             try { pdfRenderer?.close() } catch (_: Exception) {}
             try { pfdRef?.close() } catch (_: Exception) {}
-            renderedPages.values.forEach { runCatching { it.recycle() } }
             renderedPages.clear()
         }
     }
@@ -163,10 +162,9 @@ fun PdfViewerScreen(
         val renderer = pdfRenderer ?: return@LaunchedEffect
         withContext(Dispatchers.IO) {
             // Evict pages far from viewport to bound memory usage
-            val toEvict = renderedPages.keys.filter { it < currentPageIndex - 3 || it > currentPageIndex + 4 }
+            val toEvict = renderedPages.keys.filter { it < currentPageIndex - 4 || it > currentPageIndex + 5 }
             for (k in toEvict) {
-                val bmp = renderedPages.remove(k)
-                bmp?.recycle()
+                renderedPages.remove(k)
             }
 
             // Render pages in active viewing range

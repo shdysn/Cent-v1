@@ -45,8 +45,8 @@ fun BatchRenameDialog(
         val todayStr = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
 
         selectedFiles.mapIndexed { index, item ->
-            val ext = if (item.extension.isNotEmpty()) ".${item.extension}" else ""
-            val nameWithoutExt = item.name.substringBeforeLast(".")
+            val ext = if (!item.isDirectory && item.extension.isNotEmpty()) ".${item.extension}" else ""
+            val nameWithoutExt = if (!item.isDirectory && item.extension.isNotEmpty()) item.name.substringBeforeLast(".") else item.name
             val newName = when (mode) {
                 RenameMode.NUMBERING -> {
                     val numStr = String.format("%02d", startNum + index)

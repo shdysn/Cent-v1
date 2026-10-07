@@ -12,10 +12,19 @@ import androidx.core.content.ContextCompat
 object BiometricHelper {
 
     fun isBiometricAvailable(context: Context): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             val biometricManager = context.getSystemService(BiometricManager::class.java)
             if (biometricManager != null) {
-                val canAuth = biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+                val canAuth = biometricManager.canAuthenticate(
+                    BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.BIOMETRIC_STRONG
+                )
+                return canAuth == BiometricManager.BIOMETRIC_SUCCESS
+            }
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val biometricManager = context.getSystemService(BiometricManager::class.java)
+            if (biometricManager != null) {
+                @Suppress("DEPRECATION")
+                val canAuth = biometricManager.canAuthenticate()
                 return canAuth == BiometricManager.BIOMETRIC_SUCCESS
             }
         }

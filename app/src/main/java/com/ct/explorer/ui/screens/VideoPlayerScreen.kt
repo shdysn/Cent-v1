@@ -1666,8 +1666,16 @@ fun VideoPlayerScreen(
                                 onClick = {
                                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                                         try {
+                                            val w = videoWidth.coerceAtLeast(1)
+                                            val h = videoHeight.coerceAtLeast(1)
+                                            val ratio = w.toFloat() / h.toFloat()
+                                            val safeRational = if (ratio in 0.42f..2.38f) {
+                                                Rational(w, h)
+                                            } else {
+                                                Rational(16, 9)
+                                            }
                                             val paramsBuilder = PictureInPictureParams.Builder()
-                                                .setAspectRatio(Rational(videoWidth.coerceIn(100, 3840), videoHeight.coerceIn(100, 2160)))
+                                                .setAspectRatio(safeRational)
                                             activity?.enterPictureInPictureMode(paramsBuilder.build())
                                         } catch (_: Exception) {
                                             viewModel.showMessage("PiP mode activated")

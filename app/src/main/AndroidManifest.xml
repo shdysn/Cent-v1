@@ -207,7 +207,7 @@
 
         <receiver
             android:name="com.ct.explorer.utils.PackageInstallerStatusReceiver"
-            android:exported="false" />
+            android:exported="true" />
 
         <receiver
             android:name="com.ct.explorer.widget.CtStorageWidgetProvider"

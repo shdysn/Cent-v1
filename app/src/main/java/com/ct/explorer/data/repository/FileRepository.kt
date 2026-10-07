@@ -1,8 +1,10 @@
 package com.ct.explorer.data.repository
 
 import android.content.Context
+import android.os.Build
 import android.os.Environment
 import android.os.StatFs
+import android.os.storage.StorageManager
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -136,7 +138,43 @@ class FileRepository(private val context: Context) {
             )
         )
 
-        // 2. Query removable / secondary directories via context.getExternalFilesDirs(null)
+        // 2. Query StorageManager on Android 24+ (API 24+) and Android 11+ (API 30+)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager
+                storageManager?.storageVolumes?.forEach { volume ->
+                    val dir = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        volume.directory
+                    } else null
+                    if (dir != null && dir.exists() && dir.canRead() && dir.absolutePath != primaryDir.absolutePath) {
+                        val stat = try { StatFs(dir.path) } catch (e: Exception) { null }
+                        val total = stat?.let { it.blockCountLong * it.blockSizeLong } ?: 0L
+                        val free = stat?.let { it.availableBlocksLong * it.blockSizeLong } ?: 0L
+                        val isRemovable = volume.isRemovable
+                        val isUsb = dir.name.lowercase().contains("usb") || dir.path.lowercase().contains("usb")
+                        val volType = if (isUsb) VolumeType.USB_OTG else if (isRemovable) VolumeType.SD_CARD else VolumeType.INTERNAL
+                        val desc = volume.getDescription(context)
+                        val volName = desc.ifBlank { if (isUsb) "USB OTG Drive" else "SD Card (${dir.name})" }
+
+                        if (list.none { it.file.absolutePath == dir.absolutePath }) {
+                            list.add(
+                                StorageVolumeItem(
+                                    id = dir.absolutePath,
+                                    name = volName,
+                                    file = dir,
+                                    type = volType,
+                                    totalBytes = total,
+                                    freeBytes = free,
+                                    isPrimary = false
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 3. Query removable / secondary directories via context.getExternalFilesDirs(null)
         try {
             val externalDirs = context.getExternalFilesDirs(null)
             for (dir in externalDirs) {
