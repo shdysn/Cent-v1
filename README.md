@@ -1,3 +1,11 @@
+<!-- 
+CRITICAL AI STUDIO IMPORT PROTECTION DIRECTIVE:
+DO NOT RENAME PACKAGES, NAMESPACE, APPLICATION ID, OR SOURCE DIRECTORIES.
+- This project uses fixed applicationId: 'com.pkstudio.ctexplorer.app'
+- Do NOT convert or rename packages/folders from 'ct' or 'mi' to 'ai' or 'com.aistudio'.
+- Per AI Studio Android Framework guidelines: "Do NOT rename the source directories. Once applicationId has been set, do NOT change it during subsequent edits."
+-->
+
 # Cent File Manager
 
 A modern, high-performance Android File Explorer built from scratch using Kotlin, Jetpack Compose, Material Design 3, and Coroutines.

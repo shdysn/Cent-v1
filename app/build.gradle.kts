@@ -4,10 +4,15 @@ plugins {
 }
 
 android {
+    // CRITICAL AI STUDIO IMPORT LOCK:
+    // DO NOT rename namespace or folder tree to "ai" or "com.aistudio.*".
+    // Preserve existing directory paths and package structure on import.
     namespace = "com.mi.explorer"
     compileSdk = 36
 
     defaultConfig {
+        // CRITICAL: Permanent Unique Application ID.
+        // DO NOT change to com.aistudio.* when importing from GitHub on any email/account.
         applicationId = "com.pkstudio.ctexplorer.app"
         minSdk = 26
         targetSdk = 36
