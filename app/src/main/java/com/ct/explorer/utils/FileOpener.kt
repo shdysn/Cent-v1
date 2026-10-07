@@ -17,6 +17,19 @@ object FileOpener {
 
     const val EXTRA_FROM_INTERNAL_INSTALLER = "from_mi_explorer_internal"
 
+    fun getSafeContentUri(context: Context, file: File): Uri? {
+        return try {
+            FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+        } catch (e: Exception) {
+            android.util.Log.e("FileOpener", "FileProvider failed for ${file.absolutePath}", e)
+            null
+        }
+    }
+
     fun canInstallUnknownApps(context: Context): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
@@ -99,14 +112,9 @@ object FileOpener {
         }
 
         return try {
-            val uri: Uri = try {
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-            } catch (e: Exception) {
-                Uri.fromFile(file)
+            val uri = getSafeContentUri(context, file) ?: run {
+                Toast.makeText(context, "Cannot prepare file URI for installation", Toast.LENGTH_SHORT).show()
+                return false
             }
 
             val pm = context.packageManager
@@ -182,14 +190,9 @@ object FileOpener {
         }
 
         try {
-            val uri: Uri = try {
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-            } catch (e: Exception) {
-                Uri.fromFile(file)
+            val uri = getSafeContentUri(context, file) ?: run {
+                Toast.makeText(context, "Unable to access file securely", Toast.LENGTH_SHORT).show()
+                return
             }
 
             val mimeType = item.mimeType
@@ -216,11 +219,10 @@ object FileOpener {
 
     private fun tryGenericFallback(context: Context, item: FileItem) {
         try {
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                item.file
-            )
+            val uri = getSafeContentUri(context, item.file) ?: run {
+                Toast.makeText(context, "Cannot generate secure URI for file", Toast.LENGTH_SHORT).show()
+                return
+            }
             val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "*/*")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -240,11 +242,10 @@ object FileOpener {
 
     fun openWithSpecificApp(context: Context, item: FileItem, packageName: String, activityName: String) {
         try {
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                item.file
-            )
+            val uri = getSafeContentUri(context, item.file) ?: run {
+                openWithChooser(context, item)
+                return
+            }
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, item.mimeType)
                 setClassName(packageName, activityName)
@@ -262,15 +263,7 @@ object FileOpener {
 
     fun queryIntentApps(context: Context, item: FileItem): List<ResolveInfo> {
         return try {
-            val uri = try {
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    item.file
-                )
-            } catch (e: Exception) {
-                Uri.fromFile(item.file)
-            }
+            val uri = getSafeContentUri(context, item.file) ?: return emptyList()
 
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, item.mimeType)
@@ -287,14 +280,9 @@ object FileOpener {
         val file = item.file
         if (!file.exists()) return
         try {
-            val uri: Uri = try {
-                FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    file
-                )
-            } catch (e: Exception) {
-                Uri.fromFile(file)
+            val uri = getSafeContentUri(context, file) ?: run {
+                Toast.makeText(context, "Cannot prepare file for sharing", Toast.LENGTH_SHORT).show()
+                return
             }
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = item.mimeType
@@ -320,16 +308,11 @@ object FileOpener {
         try {
             val uris = ArrayList<Uri>()
             for (f in existingFiles) {
-                val uri = try {
-                    FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        f
-                    )
-                } catch (e: Exception) {
-                    Uri.fromFile(f)
-                }
-                uris.add(uri)
+                getSafeContentUri(context, f)?.let { uris.add(it) }
+            }
+            if (uris.isEmpty()) {
+                Toast.makeText(context, "Cannot prepare files for sharing", Toast.LENGTH_SHORT).show()
+                return
             }
             val intent = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
                 type = "*/*"

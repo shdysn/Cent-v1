@@ -29,7 +29,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.ct.explorer.data.model.FileItem
 import com.ct.explorer.ui.components.ApkInstallDialog
@@ -168,86 +170,127 @@ class MainActivity : ComponentActivity() {
                 lowerName.endsWith(".mov") || lowerName.endsWith(".3gp") || lowerName.endsWith(".flv") ||
                 lowerName.endsWith(".webm") || lowerName.endsWith(".ts") || lowerName.endsWith(".m4v") ||
                 lowerName.endsWith(".wmv") || lowerName.endsWith(".rmvb") || lowerName.endsWith(".mpeg") -> {
-                    try {
-                        val videoFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
-                            java.io.File(uri.path!!)
-                        } else {
-                            val safeName = java.io.File(displayName).name.ifEmpty { "video_${System.currentTimeMillis()}.mp4" }
-                            java.io.File(cacheDir, safeName).apply {
-                                parentFile?.mkdirs()
-                                contentResolver.openInputStream(uri)?.use { input ->
-                                    outputStream().use { output -> input.copyTo(output) }
+                    if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
+                        viewModel.openVideoPlayer(java.io.File(uri.path!!))
+                    } else {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                val safeName = java.io.File(displayName).name.ifEmpty { "video_${System.currentTimeMillis()}.mp4" }
+                                val videoFile = java.io.File(cacheDir, safeName).apply {
+                                    parentFile?.mkdirs()
+                                    contentResolver.openInputStream(uri)?.use { input ->
+                                        outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (videoFile.exists() && videoFile.length() > 0L) {
+                                        viewModel.openVideoPlayer(videoFile)
+                                    } else {
+                                        viewModel.showMessage("Unable to load video")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    viewModel.showMessage("Error opening video: ${e.localizedMessage}")
                                 }
                             }
                         }
-                        if (videoFile.exists()) {
-                            viewModel.openVideoPlayer(videoFile)
-                        } else {
-                            viewModel.showMessage("Unable to load video")
-                        }
-                    } catch (e: Exception) {
-                        viewModel.showMessage("Error opening video: ${e.localizedMessage}")
                     }
                 }
                 // APK, XAPK, APKS Installation Packages (In-App Installer)
                 lowerName.endsWith(".apk") || lowerName.endsWith(".xapk") || lowerName.endsWith(".apks") || lowerMime.contains("android.package-archive") -> {
-                    try {
-                        val safeName = java.io.File(displayName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "pkg_${System.currentTimeMillis()}.apk" }
-                        val cacheFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).canRead()) {
-                            java.io.File(uri.path!!)
+                    if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).canRead()) {
+                        val localFile = java.io.File(uri.path!!)
+                        if (lowerName.endsWith(".xapk") || lowerName.endsWith(".apks")) {
+                            viewModel.openXapkFile(localFile)
                         } else {
-                            java.io.File(cacheDir, "view_${System.currentTimeMillis()}_$safeName").apply {
-                                parentFile?.mkdirs()
-                                contentResolver.openInputStream(uri)?.use { input ->
-                                    outputStream().use { output -> input.copyTo(output) }
+                            viewModel.openApkInstallDialog(localFile)
+                        }
+                    } else {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                val safeName = java.io.File(displayName).name.replace(Regex("[^a-zA-Z0-9._-]"), "_").ifEmpty { "pkg_${System.currentTimeMillis()}.apk" }
+                                val cacheFile = java.io.File(cacheDir, "view_${System.currentTimeMillis()}_$safeName").apply {
+                                    parentFile?.mkdirs()
+                                    contentResolver.openInputStream(uri)?.use { input ->
+                                        outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (!cacheFile.exists() || cacheFile.length() == 0L) {
+                                        viewModel.showMessage("Package file is empty or unreadable")
+                                    } else if (lowerName.endsWith(".xapk") || lowerName.endsWith(".apks")) {
+                                        viewModel.openXapkFile(cacheFile)
+                                    } else {
+                                        viewModel.openApkInstallDialog(cacheFile)
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    viewModel.showMessage("Failed to open package: ${e.localizedMessage}")
                                 }
                             }
                         }
-                        if (!cacheFile.exists() || cacheFile.length() == 0L) {
-                            viewModel.showMessage("Package file is empty or unreadable")
-                        } else if (lowerName.endsWith(".xapk") || lowerName.endsWith(".apks")) {
-                            viewModel.openXapkFile(cacheFile)
-                        } else {
-                            viewModel.openApkInstallDialog(cacheFile)
-                        }
-                    } catch (e: Exception) {
-                        viewModel.showMessage("Failed to open package: ${e.localizedMessage}")
                     }
                 }
                 // PDF Documents
                 lowerName.endsWith(".pdf") || lowerMime.contains("pdf") -> {
-                    try {
-                        val safeName = java.io.File(displayName).name.ifEmpty { "document_${System.currentTimeMillis()}.pdf" }
-                        val cacheFile = java.io.File(cacheDir, safeName).apply {
-                            parentFile?.mkdirs()
-                            contentResolver.openInputStream(uri)?.use { input ->
-                                outputStream().use { output -> input.copyTo(output) }
+                    if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
+                        viewModel.openPdfFile(java.io.File(uri.path!!))
+                    } else {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                val safeName = java.io.File(displayName).name.ifEmpty { "document_${System.currentTimeMillis()}.pdf" }
+                                val cacheFile = java.io.File(cacheDir, safeName).apply {
+                                    parentFile?.mkdirs()
+                                    contentResolver.openInputStream(uri)?.use { input ->
+                                        outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (cacheFile.exists()) {
+                                        viewModel.openPdfFile(cacheFile)
+                                    } else {
+                                        viewModel.showMessage("Unable to load document")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    viewModel.showMessage("Failed to open PDF: ${e.localizedMessage}")
+                                }
                             }
                         }
-                        viewModel.openPdfFile(cacheFile)
-                    } catch (e: Exception) {
-                        viewModel.showMessage("Failed to open PDF: ${e.localizedMessage}")
                     }
                 }
                 // Multi-Format Archives (ZIP, 7Z, RAR, TAR, GZ, TGZ)
                 lowerName.endsWith(".zip") || lowerName.endsWith(".7z") || lowerName.endsWith(".rar") ||
                 lowerName.endsWith(".tar") || lowerName.endsWith(".gz") || lowerName.endsWith(".tgz") ||
                 lowerMime.contains("zip") || lowerMime.contains("tar") || lowerMime.contains("rar") -> {
-                    try {
-                        val safeName = java.io.File(displayName).name.ifEmpty { "archive_${System.currentTimeMillis()}.zip" }
-                        val cacheFile = if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
-                            java.io.File(uri.path!!)
-                        } else {
-                            java.io.File(cacheDir, safeName).apply {
-                                parentFile?.mkdirs()
-                                contentResolver.openInputStream(uri)?.use { input ->
-                                    outputStream().use { output -> input.copyTo(output) }
+                    if (uri.scheme == "file" && uri.path != null && java.io.File(uri.path!!).exists()) {
+                        viewModel.openZipViewer(java.io.File(uri.path!!))
+                    } else {
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            try {
+                                val safeName = java.io.File(displayName).name.ifEmpty { "archive_${System.currentTimeMillis()}.zip" }
+                                val cacheFile = java.io.File(cacheDir, safeName).apply {
+                                    parentFile?.mkdirs()
+                                    contentResolver.openInputStream(uri)?.use { input ->
+                                        outputStream().use { output -> input.copyTo(output) }
+                                    }
+                                }
+                                withContext(Dispatchers.Main) {
+                                    if (cacheFile.exists()) {
+                                        viewModel.openZipViewer(cacheFile)
+                                    } else {
+                                        viewModel.openZipFromUri(uri, displayName)
+                                    }
+                                }
+                            } catch (_: Exception) {
+                                withContext(Dispatchers.Main) {
+                                    viewModel.openZipFromUri(uri, displayName)
                                 }
                             }
                         }
-                        viewModel.openZipViewer(cacheFile)
-                    } catch (_: Exception) {
-                        viewModel.openZipFromUri(uri, displayName)
                     }
                 }
                 // HTML Files

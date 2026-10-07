@@ -1885,9 +1885,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
                 mediaPlayer = null
 
                 val player = MediaPlayer()
-                java.io.FileInputStream(item.file).use { fis ->
-                    player.setDataSource(fis.fd)
-                }
+                player.setDataSource(item.file.absolutePath)
                 withContext(Dispatchers.IO) {
                     player.prepare()
                 }
