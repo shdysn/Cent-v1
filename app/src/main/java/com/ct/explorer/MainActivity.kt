@@ -425,6 +425,17 @@ fun CtMainApp(viewModel: ExplorerViewModel) {
     }
 
     LaunchedEffect(Unit) {
+        com.ct.explorer.core.events.AppEventBus.events.collect { event ->
+            when (event) {
+                is com.ct.explorer.core.events.AppEvent.ShowMessage -> {
+                    snackbarHostState.showSnackbar(event.message)
+                }
+                else -> {}
+            }
+        }
+    }
+
+    LaunchedEffect(Unit) {
         com.ct.explorer.utils.InstallerStatusBus.events.collect { event ->
             when (event) {
                 is com.ct.explorer.utils.InstallSessionEvent.Success -> {

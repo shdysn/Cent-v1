@@ -29,31 +29,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.io.File
+import com.ct.explorer.core.navigation.NavigationManager
+import com.ct.explorer.core.events.AppEventBus
 
-enum class Screen {
-    MAIN,
-    CLEANER,
-    FTP_SERVER,
-    CATEGORY_VIEW,
-    TEXT_EDITOR,
-    IMAGE_VIEWER,
-    APP_MANAGER,
-    VAULT,
-    DUPLICATES,
-    STORAGE_ANALYZER,
-    ZIP_VIEWER,
-    TRASH,
-    PDF_VIEWER,
-    VIDEO_PLAYER,
-    NETWORK_DRIVES,
-    FAST_SHARE,
-    SOCIAL_HUB,
-    WEB_SHARE,
-    FILE_SHREDDER,
-    SMART_COLLECTIONS,
-    TIME_MACHINE,
-    APP_INSTALLER
-}
+typealias Screen = com.ct.explorer.core.navigation.Screen
 
 data class PdfViewerState(
     val file: File? = null,
@@ -158,11 +137,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val _appsRepository = lazy { AppsRepository(application.applicationContext) }
     val appsRepository get() = _appsRepository.value
 
-    // Current Screen
-    private val _currentScreen = MutableStateFlow(Screen.MAIN)
-    val currentScreen: StateFlow<Screen> = _currentScreen.asStateFlow()
-
-    private val screenBackStack = mutableListOf<Screen>()
+    // Current Screen (Delegated to core NavigationManager)
+    val currentScreen: StateFlow<Screen> get() = NavigationManager.currentScreen
 
     // Current Main Tab (Recent vs Storage)
     private val _selectedTab = MutableStateFlow(CtTab.STORAGE)
@@ -416,14 +392,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun navigateToScreen(screen: Screen) {
-        if (_currentScreen.value != screen) {
-            screenBackStack.add(_currentScreen.value)
-            _currentScreen.value = screen
-        }
+        NavigationManager.navigateTo(screen)
     }
 
     fun handleBackPress(): Boolean {
-        if (_currentScreen.value == Screen.MAIN) {
+        if (NavigationManager.getCurrentScreen() == Screen.MAIN) {
             if (isDualPaneActive.value && activePaneIndex.value == 1) {
                 val paneB = _paneBState.value
                 if (paneB.selectedItems.isNotEmpty()) {
@@ -451,20 +424,14 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             return false
         }
 
-        if (_currentScreen.value == Screen.NETWORK_DRIVES && _activeNetworkDrive.value != null) {
+        if (NavigationManager.getCurrentScreen() == Screen.NETWORK_DRIVES && _activeNetworkDrive.value != null) {
             if (!navigateUpRemoteFolder()) {
                 disconnectNetworkDrive()
             }
             return true
         }
 
-        if (screenBackStack.isNotEmpty()) {
-            _currentScreen.value = screenBackStack.removeAt(screenBackStack.lastIndex)
-            return true
-        }
-
-        _currentScreen.value = Screen.MAIN
-        return true
+        return NavigationManager.popBackStack()
     }
 
     fun refreshStorage() {
@@ -908,7 +875,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         if (title == "Downloads") {
             _selectedTab.value = CtTab.STORAGE
             loadDirectory(fileRepository.downloadsDirectory, addToHistory = true)
-            _currentScreen.value = Screen.MAIN
+            NavigationManager.navigateTo(Screen.MAIN)
             return
         }
 
@@ -937,7 +904,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun refreshCategory() {
         val category = _categoryViewState.value.category
-        if (_currentScreen.value == Screen.CATEGORY_VIEW) {
+        if (NavigationManager.getCurrentScreen() == Screen.CATEGORY_VIEW) {
             viewModelScope.launch {
                 val items = fileRepository.getCategoryFiles(category)
                 _categoryViewState.update { it.copy(items = items, isLoading = false) }
@@ -973,7 +940,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     fun navigateToSocialFolder(folder: File) {
         _selectedTab.value = CtTab.STORAGE
         loadDirectory(folder, addToHistory = true)
-        _currentScreen.value = Screen.MAIN
+        NavigationManager.navigateTo(Screen.MAIN)
     }
 
     // Text & HTML Editor/Viewer
