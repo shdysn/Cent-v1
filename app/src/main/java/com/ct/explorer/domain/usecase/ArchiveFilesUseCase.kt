@@ -72,13 +72,15 @@ class ArchiveFilesUseCase(
                 destDir = destDir,
                 password = password,
                 selectedPaths = selectedPaths
-            ) { completed, total ->
+            ) { fraction, entryName ->
                 val update = FileOperationProgress(
                     isRunning = true,
                     taskName = "Extracting archive...",
-                    currentFileName = zipFile.name,
-                    completedItems = completed,
-                    totalItems = total
+                    currentFileName = if (entryName.isNotBlank()) entryName else zipFile.name,
+                    completedItems = (fraction * 100f).toInt(),
+                    totalItems = 100,
+                    bytesProcessed = (fraction * 10000f).toLong(),
+                    totalBytes = 10000L
                 )
                 FileOperationBus.updateProgress(update)
                 onProgress?.invoke(update)

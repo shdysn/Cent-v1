@@ -33,6 +33,11 @@ import com.ct.explorer.core.navigation.NavigationManager
 import com.ct.explorer.core.events.AppEventBus
 import com.ct.explorer.features.vault.VaultViewModel
 import com.ct.explorer.features.network.NetworkServerViewModel
+import com.ct.explorer.features.cleaner.CleanerViewModel
+import com.ct.explorer.features.media.AudioPlayerViewModel
+import com.ct.explorer.features.editor.TextEditorViewModel
+import com.ct.explorer.features.analyzer.StorageAnalyzerViewModel
+import com.ct.explorer.features.browser.FileBrowserViewModel
 
 typealias Screen = com.ct.explorer.core.navigation.Screen
 typealias FtpServerState = com.ct.explorer.features.network.FtpServerState
@@ -166,23 +171,26 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val _clipboard = MutableStateFlow<ClipboardState?>(null)
     val clipboard: StateFlow<ClipboardState?> = _clipboard.asStateFlow()
 
-    // Cleaner State
-    private val _cleanScan = MutableStateFlow<CleanScanResult?>(null)
-    val cleanScan: StateFlow<CleanScanResult?> = _cleanScan.asStateFlow()
-    val isCleaning = MutableStateFlow(false)
-    val isCleanScanning = MutableStateFlow(false)
-    val cleanedBytes = MutableStateFlow<Long?>(null)
-
     // Feature ViewModels (Isolated Domain Delegation)
     val vaultViewModel by lazy { VaultViewModel(application) }
     val networkServerViewModel by lazy { NetworkServerViewModel(application) }
+    val cleanerViewModel by lazy { CleanerViewModel(application) }
+    val audioPlayerViewModel by lazy { AudioPlayerViewModel(application) }
+    val textEditorViewModel by lazy { TextEditorViewModel(application) }
+    val storageAnalyzerViewModel by lazy { StorageAnalyzerViewModel(application) }
+    val fileBrowserViewModel by lazy { FileBrowserViewModel(application) }
+
+    // Cleaner State (Delegated to CleanerViewModel)
+    val cleanScan: StateFlow<CleanScanResult?> get() = cleanerViewModel.cleanScan
+    val isCleaning: MutableStateFlow<Boolean> get() = cleanerViewModel.isCleaning
+    val isCleanScanning: MutableStateFlow<Boolean> get() = cleanerViewModel.isCleanScanning
+    val cleanedBytes: MutableStateFlow<Long?> get() = cleanerViewModel.cleanedBytes
 
     // FTP Server State (Delegated to NetworkServerViewModel)
     val ftpServerState: StateFlow<FtpServerState> get() = networkServerViewModel.ftpServerState
 
-    // Text Editor State
-    private val _textEditorState = MutableStateFlow(TextEditorState())
-    val textEditorState: StateFlow<TextEditorState> = _textEditorState.asStateFlow()
+    // Text Editor State (Delegated to TextEditorViewModel)
+    val textEditorState: StateFlow<TextEditorState> get() = textEditorViewModel.textEditorState
 
     // Image Viewer State
     private val _imageViewerState = MutableStateFlow(ImageViewerState())
@@ -230,12 +238,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val isDuplicateScanning = MutableStateFlow(false)
     val selectedDuplicateFiles = MutableStateFlow<Set<FileItem>>(emptySet())
 
-    // Storage Analyzer Repository & State (Lazy)
+    // Storage Analyzer Repository & State (Delegated to StorageAnalyzerViewModel)
     private val _storageAnalyzerRepository = lazy { StorageAnalyzerRepository(application) }
     val storageAnalyzerRepository get() = _storageAnalyzerRepository.value
-    private val _storageAnalysisResult = MutableStateFlow<StorageAnalysisResult?>(null)
-    val storageAnalysisResult: StateFlow<StorageAnalysisResult?> = _storageAnalysisResult.asStateFlow()
-    val isStorageAnalyzing = MutableStateFlow(false)
+    val storageAnalysisResult: StateFlow<StorageAnalysisResult?> get() = storageAnalyzerViewModel.storageAnalysisResult
+    val isStorageAnalyzing: MutableStateFlow<Boolean> get() = storageAnalyzerViewModel.isStorageAnalyzing
 
     // Zip Viewer & Compressor State (Lazy)
     private val _zipRepository = lazy { ZipRepository(application) }
@@ -264,11 +271,8 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private val _pdfViewerState = MutableStateFlow(PdfViewerState())
     val pdfViewerState: StateFlow<PdfViewerState> = _pdfViewerState.asStateFlow()
 
-    // Built-in Audio Player
-    private var mediaPlayer: MediaPlayer? = null
-    private var audioProgressJob: Job? = null
-    private val _audioPlayerState = MutableStateFlow(AudioPlayerState())
-    val audioPlayerState: StateFlow<AudioPlayerState> = _audioPlayerState.asStateFlow()
+    // Built-in Audio Player (Delegated to AudioPlayerViewModel)
+    val audioPlayerState: StateFlow<AudioPlayerState> get() = audioPlayerViewModel.audioPlayerState
 
     // Built-in Video Player
     private val _videoPlayerState = MutableStateFlow(VideoPlayerState())
@@ -456,6 +460,24 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
             val files = fileRepository.getRecentFiles()
             _recentFiles.value = files
             isRecentLoading.value = false
+        }
+    }
+
+    fun navigateToFolder(dir: File, addToHistory: Boolean = true) =
+        loadDirectory(dir, addToHistory = addToHistory)
+
+    fun navigateUp(): Boolean {
+        val current = _storageState.value
+        val parent = current.currentDir.parentFile
+        val rootPath = fileRepository.rootStorageDirectory.parentFile?.absolutePath ?: ""
+        return if (parent != null && parent.canRead() && (rootPath.isEmpty() || parent.absolutePath.startsWith(rootPath))) {
+            loadDirectory(parent, addToHistory = true)
+            true
+        } else if (current.backStack.isNotEmpty()) {
+            goBackInDirectory()
+            true
+        } else {
+            false
         }
     }
 
@@ -733,90 +755,36 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Cleaner Tools
-    fun openCleaner() {
-        navigateToScreen(Screen.CLEANER)
-        startCleanScan()
+    // Cleaner Tools (Delegated to CleanerViewModel)
+    fun openCleaner() = cleanerViewModel.openCleaner()
+    fun startCleanScan() = cleanerViewModel.startCleanScan()
+    fun cleanSelectedJunk() {
+        cleanerViewModel.cleanSelectedJunk()
+        refreshStorage()
     }
-
-    fun startCleanScan() {
-        viewModelScope.launch {
-            isCleanScanning.value = true
-            cleanedBytes.value = null
-            val result = fileRepository.scanForClean()
-            _cleanScan.value = result
-            isCleanScanning.value = false
-        }
-    }
-
-    fun performClean() {
-        val scan = _cleanScan.value ?: return
-        viewModelScope.launch {
-            isCleaning.value = true
-            var bytesCleaned = 0L
-            for (item in scan.junkFiles) {
-                val size = item.size
-                if (fileRepository.delete(item).getOrDefault(false)) {
-                    bytesCleaned += size
-                }
-            }
-            cleanedBytes.value = bytesCleaned
-            _cleanScan.value = scan.copy(junkFiles = emptyList())
-            isCleaning.value = false
-            refreshStorage()
-            showMessage("Cleaned ${FileItem.formatBytes(bytesCleaned)} of junk files")
-        }
-    }
+    fun cleanEmptyFolders() = cleanerViewModel.cleanEmptyFolders()
+    fun performClean() = cleanSelectedJunk()
 
     // FTP Server Tool (Delegated to NetworkServerViewModel)
     fun openFtpServer() = networkServerViewModel.openFtpServer()
     fun toggleFtpServer() = networkServerViewModel.toggleFtpServer()
 
-    // Cleaner Detailed Actions
+    // Cleaner Detailed Actions (Delegated to CleanerViewModel)
     fun deleteLargeFiles(items: List<FileItem>) {
-        if (items.isEmpty()) return
-        viewModelScope.launch {
-            var count = 0
-            var bytesFreed = 0L
-            for (item in items) {
-                val size = item.size
-                if (fileRepository.delete(item).getOrDefault(false)) {
-                    count++
-                    bytesFreed += size
-                }
-            }
-            showMessage("Deleted $count large file(s) (Freed ${FileItem.formatBytes(bytesFreed)})")
-            startCleanScan()
-            refreshStorage()
-            refreshCurrentDirectory()
-        }
+        cleanerViewModel.deleteLargeFiles(items)
+        refreshStorage()
+        refreshCurrentDirectory()
     }
 
     fun deleteApkPackages(items: List<FileItem>) {
-        if (items.isEmpty()) return
-        viewModelScope.launch {
-            var count = 0
-            for (item in items) {
-                if (fileRepository.delete(item).getOrDefault(false)) count++
-            }
-            showMessage("Deleted $count APK package(s)")
-            startCleanScan()
-            refreshStorage()
-            refreshCurrentDirectory()
-        }
+        cleanerViewModel.deleteApkPackages(items)
+        refreshStorage()
+        refreshCurrentDirectory()
     }
 
     fun deleteEmptyFolders(folders: List<FileItem>) {
-        if (folders.isEmpty()) return
-        viewModelScope.launch {
-            var count = 0
-            for (f in folders) {
-                if (fileRepository.deleteEmptyFolder(f).getOrDefault(false)) count++
-            }
-            showMessage("Removed $count empty folder(s)")
-            startCleanScan()
-            refreshCurrentDirectory()
-        }
+        cleanerViewModel.deleteEmptyFolders(folders)
+        refreshCurrentDirectory()
     }
 
     // Category Screen
@@ -897,94 +865,16 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         NavigationManager.navigateTo(Screen.MAIN)
     }
 
-    // Text & HTML Editor/Viewer
-    fun openTextEditor(file: File) {
-        viewModelScope.launch {
-            val directRead = fileRepository.readText(file).getOrNull()
-            val rawContent = directRead ?: ""
-            // Cap large files to prevent Compose OOM / ANR freeze on huge log files
-            val maxSafeChars = 150_000
-            val content = if (rawContent.length > maxSafeChars) {
-                rawContent.take(maxSafeChars) + "\n\n... [File truncated at 150 KB for smooth editing]"
-            } else {
-                rawContent
-            }
-            val isHtml = file.extension.lowercase() in listOf("html", "htm")
-            _textEditorState.value = TextEditorState(
-                file = file,
-                title = file.name,
-                content = content,
-                originalContent = content,
-                isHtmlMode = isHtml,
-                showHtmlPreview = isHtml
-            )
-            navigateToScreen(Screen.TEXT_EDITOR)
-        }
-    }
-
-    fun openTextFromUri(uri: android.net.Uri, displayName: String) {
-        viewModelScope.launch {
-            val content = try {
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use { stream ->
-                    stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                } ?: ""
-            } catch (e: Exception) {
-                ""
-            }
-
-            val isHtml = displayName.endsWith(".html", ignoreCase = true) || displayName.endsWith(".htm", ignoreCase = true)
-
-            _textEditorState.value = TextEditorState(
-                file = null,
-                sourceUri = uri,
-                title = displayName,
-                content = content,
-                originalContent = content,
-                isHtmlMode = isHtml,
-                showHtmlPreview = isHtml
-            )
-            navigateToScreen(Screen.TEXT_EDITOR)
-        }
-    }
-
-    fun toggleHtmlPreview() {
-        _textEditorState.update { it.copy(showHtmlPreview = !it.showHtmlPreview) }
-    }
-
-    fun updateEditorContent(newContent: String) {
-        _textEditorState.update { it.copy(content = newContent) }
-    }
-
-    fun toggleEditorWordWrap() {
-        _textEditorState.update { it.copy(wordWrap = !it.wordWrap) }
-    }
-
-    fun saveEditorFile() {
-        val state = _textEditorState.value
-        viewModelScope.launch {
-            _textEditorState.update { it.copy(isSaving = true) }
-            val success = if (state.file != null) {
-                fileRepository.writeText(state.file, state.content).isSuccess
-            } else if (state.sourceUri != null) {
-                try {
-                    getApplication<Application>().contentResolver.openOutputStream(state.sourceUri, "wt")?.use { out ->
-                        out.bufferedWriter(Charsets.UTF_8).use { it.write(state.content) }
-                    }
-                    true
-                } catch (e: Exception) {
-                    false
-                }
-            } else false
-
-            if (success) {
-                _textEditorState.update { it.copy(originalContent = it.content, isSaving = false) }
-                showMessage("Saved successfully")
-            } else {
-                _textEditorState.update { it.copy(isSaving = false) }
-                showMessage("Failed to save file")
-            }
-        }
-    }
+    // Text & HTML Editor/Viewer (Delegated to TextEditorViewModel)
+    fun openTextFile(file: File) = textEditorViewModel.openTextFile(file)
+    fun openTextEditor(file: File) = textEditorViewModel.openTextEditor(file)
+    fun openTextFromUri(uri: android.net.Uri, displayName: String) = textEditorViewModel.openTextFromUri(uri, displayName)
+    fun updateTextContent(newContent: String) = textEditorViewModel.updateTextContent(newContent)
+    fun updateEditorContent(newContent: String) = textEditorViewModel.updateEditorContent(newContent)
+    fun toggleHtmlPreview() = textEditorViewModel.toggleHtmlPreview()
+    fun toggleEditorWordWrap() = textEditorViewModel.toggleEditorWordWrap()
+    fun saveTextFile() = textEditorViewModel.saveTextFile()
+    fun saveEditorFile() = textEditorViewModel.saveEditorFile()
 
     // Image Viewer
     fun openImageViewer(file: File, siblingItems: List<FileItem>) {
@@ -1320,18 +1210,15 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // Storage Analyzer Functions
-    fun openStorageAnalyzer() {
-        navigateToScreen(Screen.STORAGE_ANALYZER)
+    // Storage Analyzer Functions (Delegated to StorageAnalyzerViewModel)
+    fun openStorageAnalyzer() = storageAnalyzerViewModel.openStorageAnalyzer()
+    fun analyzeStorage() = storageAnalyzerViewModel.analyzeStorage()
+    fun refreshStorageSpace() {
+        refreshStorage()
+        storageAnalyzerViewModel.refreshStorageSpace()
     }
-
-    fun analyzeStorage() {
-        viewModelScope.launch {
-            isStorageAnalyzing.value = true
-            _storageAnalysisResult.value = storageAnalyzerRepository.analyzeStorage()
-            isStorageAnalyzing.value = false
-        }
-    }
+    fun analyzeStorageCategories() = storageAnalyzerViewModel.analyzeStorageCategories()
+    fun loadLargeFiles() = storageAnalyzerViewModel.loadLargeFiles()
 
     fun openDirectoryFromAnalyzer(dir: File) {
         loadDirectory(dir, addToHistory = true)
@@ -1711,76 +1598,20 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ==========================================
-    // BUILT-IN AUDIO PLAYER METHODS
+    // BUILT-IN AUDIO PLAYER METHODS (Delegated to AudioPlayerViewModel)
     // ==========================================
 
-    fun playAudio(item: FileItem, playlist: List<FileItem> = emptyList()) {
-        viewModelScope.launch {
-            try {
-                audioProgressJob?.cancel()
-                runCatching { mediaPlayer?.stop() }
-                runCatching { mediaPlayer?.release() }
-                mediaPlayer = null
-
-                val player = MediaPlayer()
-                player.setDataSource(item.file.absolutePath)
-                withContext(Dispatchers.IO) {
-                    player.prepare()
-                }
-
-                var title = item.name
-                var artist = "Unknown Artist"
-                val duration = player.duration
-
-                var mmr: MediaMetadataRetriever? = null
-                try {
-                    mmr = MediaMetadataRetriever()
-                    mmr.setDataSource(item.file.absolutePath)
-                    title = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: item.name
-                    artist = mmr.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "Unknown Artist"
-                } catch (_: Exception) {
-                    // Fallback to filename
-                } finally {
-                    runCatching { mmr?.release() }
-                }
-
-                val fullList = if (playlist.isNotEmpty()) playlist else listOf(item)
-                val idx = fullList.indexOfFirst { it.path == item.path }.coerceAtLeast(0)
-
-                player.start()
-                mediaPlayer = player
-
-                _audioPlayerState.value = AudioPlayerState(
-                    currentFile = item.file,
-                    title = title,
-                    artist = artist,
-                    durationMs = duration,
-                    currentPositionMs = 0,
-                    isPlaying = true,
-                    isVisible = true,
-                    isExpanded = true,
-                    playlist = fullList,
-                    currentIndex = idx,
-                    isShuffle = _audioPlayerState.value.isShuffle,
-                    isRepeat = _audioPlayerState.value.isRepeat
-                )
-
-                player.setOnCompletionListener {
-                    val state = _audioPlayerState.value
-                    if (state.isRepeat) {
-                        player.seekTo(0)
-                        player.start()
-                    } else {
-                        playNextAudio()
-                    }
-                }
-
-                startAudioProgressTicker()
-            } catch (e: Exception) {
-                showMessage("Cannot play audio: ${e.localizedMessage}")
-            }
-        }
-    }
+    fun playAudio(item: FileItem, playlist: List<FileItem> = emptyList()) =
+        audioPlayerViewModel.playAudio(item, playlist)
+    fun pauseAudio() = audioPlayerViewModel.pauseAudio()
+    fun toggleAudioPlayPause() = audioPlayerViewModel.toggleAudioPlayPause()
+    fun seekAudioTo(positionMs: Int) = audioPlayerViewModel.seekAudioTo(positionMs)
+    fun playNextAudio() = audioPlayerViewModel.playNextAudio()
+    fun playPreviousAudio() = audioPlayerViewModel.playPreviousAudio()
+    fun toggleAudioExpanded() = audioPlayerViewModel.toggleAudioExpanded()
+    fun toggleAudioShuffle() = audioPlayerViewModel.toggleAudioShuffle()
+    fun toggleAudioRepeat() = audioPlayerViewModel.toggleAudioRepeat()
+    fun closeAudioPlayer() = audioPlayerViewModel.closeAudioPlayer()
 
     // ==========================================
     // BUILT-IN VIDEO PLAYER METHODS
@@ -1788,10 +1619,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     fun playVideo(item: FileItem, playlist: List<FileItem> = emptyList()) {
         // Pause audio if currently running
-        if (mediaPlayer?.isPlaying == true) {
-            mediaPlayer?.pause()
-            _audioPlayerState.update { it.copy(isPlaying = false) }
-        }
+        audioPlayerViewModel.pauseAudio()
 
         val fullList = if (playlist.isNotEmpty()) playlist else listOf(item)
         val idx = fullList.indexOfFirst { it.path == item.path }.coerceAtLeast(0)
@@ -1827,82 +1655,6 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         val prevIdx = if (state.currentIndex > 0) state.currentIndex - 1 else state.playlist.lastIndex
         val prevItem = state.playlist[prevIdx]
         playVideo(prevItem, state.playlist)
-    }
-
-    private fun startAudioProgressTicker() {
-        audioProgressJob?.cancel()
-        audioProgressJob = viewModelScope.launch {
-            while (isActive) {
-                val player = mediaPlayer
-                if (player != null) {
-                    val isPlaying = runCatching { player.isPlaying }.getOrDefault(false)
-                    val currentPos = runCatching { player.currentPosition }.getOrDefault(0)
-                    if (isPlaying) {
-                        _audioPlayerState.update {
-                            it.copy(currentPositionMs = currentPos, isPlaying = true)
-                        }
-                    }
-                }
-                delay(500)
-            }
-        }
-    }
-
-    fun toggleAudioPlayPause() {
-        val player = mediaPlayer ?: return
-        val isCurrentlyPlaying = runCatching { player.isPlaying }.getOrDefault(false)
-        if (isCurrentlyPlaying) {
-            runCatching { player.pause() }
-            _audioPlayerState.update { it.copy(isPlaying = false) }
-        } else {
-            runCatching { player.start() }
-            _audioPlayerState.update { it.copy(isPlaying = true) }
-        }
-    }
-
-    fun seekAudioTo(positionMs: Int) {
-        runCatching { mediaPlayer?.seekTo(positionMs) }
-        _audioPlayerState.update { it.copy(currentPositionMs = positionMs) }
-    }
-
-    fun playNextAudio() {
-        val state = _audioPlayerState.value
-        if (state.playlist.isEmpty()) return
-        val nextIdx = if (state.isShuffle) {
-            state.playlist.indices.random()
-        } else {
-            (state.currentIndex + 1) % state.playlist.size
-        }
-        val nextItem = state.playlist[nextIdx]
-        playAudio(nextItem, state.playlist)
-    }
-
-    fun playPreviousAudio() {
-        val state = _audioPlayerState.value
-        if (state.playlist.isEmpty()) return
-        val prevIdx = if (state.currentIndex > 0) state.currentIndex - 1 else state.playlist.lastIndex
-        val prevItem = state.playlist[prevIdx]
-        playAudio(prevItem, state.playlist)
-    }
-
-    fun toggleAudioExpanded() {
-        _audioPlayerState.update { it.copy(isExpanded = !it.isExpanded) }
-    }
-
-    fun toggleAudioShuffle() {
-        _audioPlayerState.update { it.copy(isShuffle = !it.isShuffle) }
-    }
-
-    fun toggleAudioRepeat() {
-        _audioPlayerState.update { it.copy(isRepeat = !it.isRepeat) }
-    }
-
-    fun closeAudioPlayer() {
-        audioProgressJob?.cancel()
-        runCatching { mediaPlayer?.stop() }
-        runCatching { mediaPlayer?.release() }
-        mediaPlayer = null
-        _audioPlayerState.update { it.copy(isPlaying = false, isVisible = false, isExpanded = false) }
     }
 
     // ==========================================
@@ -2536,10 +2288,7 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
 
     override fun onCleared() {
         super.onCleared()
-        audioProgressJob?.cancel()
-        runCatching { mediaPlayer?.stop() }
-        runCatching { mediaPlayer?.release() }
-        mediaPlayer = null
+        audioPlayerViewModel.closeAudioPlayer()
         vaultViewModel.lockVault()
         networkServerViewModel.stopAllServers()
         if (_fastShareRepository.isInitialized()) {
