@@ -13,6 +13,7 @@
    - `namespace = "com.ct.explorer"`
    - ایپ کا نام: **"Cent File Manager"**
 3. **کوئی فائل ڈیلیٹ نہ کریں**: 22 اسکرینز، ماڈلز، اور ویو ماڈلز کو جوں کا توں محفوظ رکھیں۔
+4. **ماڈیولر آرکیٹیکچر کا تحفظ (Do NOT import previous model)**: یہ ایپ ماڈیولر بیسڈ ہے (`core/`, `features/`, `data/repository/`)۔ پچھلے مونو لیتھک ماڈل پر واپس جانے کی سخت ممانعت ہے۔
 
 ---
 
@@ -46,3 +47,4 @@ defaultConfig {
 3. **Never rename directory paths under `app/src/main/java/com/ct/explorer`.**
 4. **Compile cleanly using `compile_applet`.**
 5. **Preserve R8 minification and the 2.3 MB APK size budget.**
+6. **Preserve Modular Architecture (DO NOT import/revert to previous models):** Keep the codebase modular-based (`core/`, `features/`, `data/repository/`, `ui/components/`, `ui/screens/`). Never collapse isolated components back into legacy monolithic structures or import outdated non-modular code.

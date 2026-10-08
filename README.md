@@ -10,7 +10,7 @@ DO NOT RENAME PACKAGES, NAMESPACE, APPLICATION ID, OR SOURCE DIRECTORIES.
 # Cent File Manager
 
 > 🔒 **AI Studio Import Protection / اے آئی اسٹوڈیو تحفظ کی ہدایات:**  
-> When importing this repository in Google AI Studio across **any email or account**, **all existing code, configurations, screens, models, and features must be preserved 100% intact**. Do NOT overwrite with templates, do NOT change `applicationId` (`com.pkstudio.ctexplorer.app`), and do NOT rename packages. See [`.github/AI_STUDIO_IMPORT_RULES.md`](.github/AI_STUDIO_IMPORT_RULES.md) for full instructions.
+> When importing this repository in Google AI Studio across **any email or account**, **all existing code, configurations, screens, models, and features must be preserved 100% intact**. This application is structured on a **modular-based architecture** (`core/`, `features/`, `data/repository/`, `ui/`). **DO NOT import or revert to the previous monolithic model / older legacy version**. Do NOT overwrite with templates, do NOT change `applicationId` (`com.pkstudio.ctexplorer.app`), and do NOT rename packages. See [`.github/AI_STUDIO_IMPORT_RULES.md`](.github/AI_STUDIO_IMPORT_RULES.md) for full instructions.
 
 A modern, high-performance Android File Explorer built from scratch using Kotlin, Jetpack Compose, Material Design 3, and Coroutines.
 
@@ -54,6 +54,13 @@ A modern, high-performance Android File Explorer built from scratch using Kotlin
 - **Language**: Kotlin 2.2.21
 - **Package Name / Application ID**: `com.pkstudio.ctexplorer.app`
 - **Namespace**: `com.ct.explorer`
+- **Modular-Based System (Do NOT Revert to Previous Models)**:
+  - `core/`: Base abstractions (`BaseFeatureViewModel`), decoupled routing (`NavigationManager`), universal event bus (`AppEventBus`, `FileOperationBus`).
+  - `features/`: Dedicated feature view models (`VaultViewModel`, `NetworkServerViewModel`).
+  - `data/repository/`: 13 isolated domain repositories (`FileRepository`, `VaultRepository`, `TrashRepository`, `AppsRepository`, `ZipRepository`, etc.).
+  - `data/model/`: Strongly-typed data models and entities.
+  - `ui/screens/` & `ui/components/`: 21 distinct composable screens and 23 standalone UI components.
+  - `utils/`: High-performance utility helpers (AES-256 Vault crypto, Zip Slip safe archiving, shredder, FTP & WebShare).
 
 ## 📦 Release APK Size Guarantee (2 MB - 3 MB Target)
 

@@ -36,6 +36,11 @@
 - R8 Minification (`isMinifyEnabled = true`) اور Resource Shrinking (`isShrinkResources = true`) ہمیشہ آن رکھیں۔
 - کوئی بھی غیر ضروری بھاری لائبریری شامل نہ کریں تاکہ APK سائز ہمیشہ **2.3 MB** کے قریب رہے۔
 
+### 6. 🧩 مکمل ماڈیولر آرکیٹیکچر کا تحفظ اور پچھلے ماڈل پر واپس نہ جانا (Modular-Based Architecture Lock)
+- یہ ایپ جدید ماڈیولر بنیاد (Modular Architecture) پر ڈیزائن کی گئی ہے۔
+- **لازمی حکم:** جب بھی کسی نئے ای میل سے AI Studio میں امپورٹ کریں، **پچھلے پرانے ماڈل (Do NOT import previous model / monolithic structure) پر ہرگز واپس نہ جائیں**۔
+- تمام ڈومین ریپازٹریز (`data/repository/`)، فیچر ماڈیولز (`features/`)، بنیادی سروسز (`core/base/`, `core/events/`, `core/navigation/`) اور یو آئی کمپوننٹس کو مکمل ماڈیولر رکھیں۔
+
 ---
 
 ## 🇬🇧 English Master Directives for AI Agents
@@ -104,6 +109,14 @@ When importing this repository into Google AI Studio on a new turn or new accoun
   - `DualPaneView` (Split-screen multi-tasking)
   - `CtStorageWidgetProvider` (Homescreen widget)
 
+### Directive 6: Modular-Based Architecture Preservation (DO NOT Revert to Previous Models)
+- **Mandatory Modular Rule:** This application has evolved into a clean, decoupled, modular architecture:
+  - **Core Layer** (`core/base/BaseFeatureViewModel.kt`, `core/events/AppEventBus.kt`, `core/navigation/NavigationManager.kt`): Unifies decoupled communication and routing without god-class cross-talk.
+  - **Feature Layer** (`features/vault/`, `features/network/`): Independent, self-contained feature view models.
+  - **Domain Repositories** (`data/repository/`): 13 dedicated single-responsibility repositories (`VaultRepository`, `TrashRepository`, `AppsRepository`, `ZipRepository`, `StorageAnalyzerRepository`, etc.).
+  - **Self-Contained Components & Screens** (`ui/components/`, `ui/screens/`): Presentation layer isolated from state mutation mechanics.
+- **NEVER Revert to Legacy / Previous Models:** When importing this repository into AI Studio under **any email address or workspace**, the AI agent **MUST NOT** revert, rollback, or downgrade the architecture to the previous monolithic model or an unmodularized legacy version. Always preserve and advance the modular design.
+
 ---
 
 ## 📋 Quick Checklist for Any AI Session
@@ -112,4 +125,5 @@ Upon opening this repository in AI Studio:
 - [x] Did you keep `applicationId = "com.pkstudio.ctexplorer.app"`? **YES (Mandatory)**
 - [x] Did you keep `namespace = "com.ct.explorer"`? **YES (Mandatory)**
 - [x] Did you preserve existing screens and repositories without deleting? **YES (Mandatory)**
+- [x] Did you preserve the modular-based structure without reverting to previous monolithic models? **YES (Mandatory)**
 - [x] Did you verify clean build using `compile_applet`? **YES (Mandatory)**
