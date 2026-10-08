@@ -57,9 +57,10 @@ class CleanerViewModel(application: Application) : BaseFeatureViewModel(applicat
         }
     }
 
-    fun cleanEmptyFolders() {
-        val scan = _cleanScan.value ?: return
-        deleteEmptyFolders(scan.emptyFolders)
+    fun cleanEmptyFolders(folders: List<FileItem>? = null) {
+        val targetFolders = folders ?: _cleanScan.value?.emptyFolders ?: emptyList()
+        if (targetFolders.isEmpty()) return
+        deleteEmptyFolders(targetFolders)
     }
 
     fun performClean() = cleanSelectedJunk()
