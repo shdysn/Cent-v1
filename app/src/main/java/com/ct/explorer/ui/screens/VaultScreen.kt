@@ -31,15 +31,21 @@ import com.ct.explorer.data.model.FileCategory
 import com.ct.explorer.data.model.FileItem
 import com.ct.explorer.ui.theme.CtOrange
 import com.ct.explorer.ui.viewmodel.ExplorerViewModel
+import com.ct.explorer.features.vault.VaultViewModel
 import com.ct.explorer.utils.FileOpener
+
+@Composable
+fun VaultScreen(viewModel: ExplorerViewModel) {
+    VaultScreen(vaultViewModel = viewModel.vaultViewModel)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VaultScreen(viewModel: ExplorerViewModel) {
-    val isPinSet by viewModel.isVaultPinSet.collectAsStateWithLifecycle()
-    val isUnlocked by viewModel.isVaultUnlocked.collectAsStateWithLifecycle()
-    val vaultFiles by viewModel.vaultFiles.collectAsStateWithLifecycle()
-    val isLoading by viewModel.isVaultLoading.collectAsStateWithLifecycle()
+fun VaultScreen(vaultViewModel: VaultViewModel) {
+    val isPinSet by vaultViewModel.isVaultPinSet.collectAsStateWithLifecycle()
+    val isUnlocked by vaultViewModel.isVaultUnlocked.collectAsStateWithLifecycle()
+    val vaultFiles by vaultViewModel.vaultFiles.collectAsStateWithLifecycle()
+    val isLoading by vaultViewModel.isVaultLoading.collectAsStateWithLifecycle()
 
     var pinInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
@@ -56,7 +62,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
     var recoveryError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
-    val isBiometricEnabled by viewModel.isBiometricVaultEnabled.collectAsStateWithLifecycle()
+    val isBiometricEnabled by vaultViewModel.isBiometricVaultEnabled.collectAsStateWithLifecycle()
     val isBiometricAvailable = remember { BiometricHelper.isBiometricAvailable(context) }
 
     fun launchBiometricPrompt() {
@@ -64,7 +70,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
         BiometricHelper.authenticate(
             activity = activity,
             onSuccess = {
-                viewModel.unlockVaultWithBiometrics()
+                vaultViewModel.unlockVaultWithBiometrics()
             },
             onError = { msg ->
                 pinError = msg
@@ -83,13 +89,13 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
 
     DisposableEffect(Unit) {
         onDispose {
-            viewModel.lockVault()
+            vaultViewModel.lockVault()
         }
     }
 
     BackHandler(enabled = true) {
-        viewModel.lockVault()
-        viewModel.handleBackPress()
+        vaultViewModel.lockVault()
+        vaultViewModel.handleBackPress()
     }
 
     Scaffold(
@@ -111,8 +117,8 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                 },
                 navigationIcon = {
                     IconButton(onClick = {
-                        viewModel.lockVault()
-                        viewModel.handleBackPress()
+                        vaultViewModel.lockVault()
+                        vaultViewModel.handleBackPress()
                     }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
@@ -122,7 +128,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                         IconButton(onClick = { showVaultSettings = true }) {
                             Icon(Icons.Default.Security, contentDescription = "Security Settings")
                         }
-                        IconButton(onClick = { viewModel.lockVault() }) {
+                        IconButton(onClick = { vaultViewModel.lockVault() }) {
                             Icon(Icons.Default.Lock, contentDescription = "Lock Vault")
                         }
                     }
@@ -196,7 +202,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                         Button(
                             onClick = {
                                 if (securityAnswerInput.isNotBlank()) {
-                                    viewModel.setupVaultPin(firstPinAttempt, securityAnswerInput)
+                                    vaultViewModel.setupVaultPin(firstPinAttempt, securityAnswerInput)
                                     showSecurityQuestionSetup = false
                                     pinInput = ""
                                 }
@@ -260,7 +266,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                                                 }
                                             }
                                         } else {
-                                            val valid = viewModel.unlockVault(newPin)
+                                            val valid = vaultViewModel.unlockVault(newPin)
                                             if (!valid) {
                                                 pinError = "Incorrect PIN. Try again."
                                                 pinInput = ""
@@ -388,7 +394,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                                 VaultItemRow(
                                     item = item,
                                     onClick = {
-                                        viewModel.openVaultFilePreview(item) { decryptedItem ->
+                                        vaultViewModel.openVaultFilePreview(item) { decryptedItem ->
                                             FileOpener.openWithChooser(context, decryptedItem)
                                         }
                                     },
@@ -412,7 +418,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.restoreFileFromVault(target)
+                        vaultViewModel.restoreFileFromVault(target)
                         showRestoreConfirmTarget = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = CtOrange)
@@ -436,7 +442,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deleteFileFromVault(target)
+                        vaultViewModel.deleteFileFromVault(target)
                         showDeleteConfirmTarget = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
@@ -478,7 +484,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                         }
                         Switch(
                             checked = isBiometricEnabled,
-                            onCheckedChange = { viewModel.toggleBiometricVault(it) },
+                            onCheckedChange = { vaultViewModel.toggleBiometricVault(it) },
                             enabled = isBiometricAvailable
                         )
                     }
@@ -544,7 +550,7 @@ fun VaultScreen(viewModel: ExplorerViewModel) {
                     onClick = {
                         if (recoveryNewPin.length != 4) {
                             recoveryError = "Please enter a valid 4-digit PIN."
-                        } else if (viewModel.resetVaultPinWithAnswer(recoveryAnswer, recoveryNewPin)) {
+                        } else if (vaultViewModel.resetVaultPinWithAnswer(recoveryAnswer, recoveryNewPin)) {
                             showForgotPinDialog = false
                             pinInput = ""
                         } else {

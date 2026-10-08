@@ -32,16 +32,28 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ct.explorer.ui.theme.CtOrange
 import com.ct.explorer.ui.viewmodel.ExplorerViewModel
+import com.ct.explorer.features.network.NetworkServerViewModel
 import com.ct.explorer.utils.webshare.QrCodeGenerator
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WebShareScreen(
     viewModel: ExplorerViewModel,
     modifier: Modifier = Modifier
 ) {
+    WebShareScreen(
+        networkViewModel = viewModel.networkServerViewModel,
+        modifier = modifier
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun WebShareScreen(
+    networkViewModel: NetworkServerViewModel,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
-    val state by viewModel.webShareState.collectAsStateWithLifecycle()
+    val state by networkViewModel.webShareState.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier.testTag("web_share_screen"),
@@ -50,14 +62,14 @@ fun WebShareScreen(
                 title = { Text("Wireless Web Share") },
                 navigationIcon = {
                     IconButton(
-                        onClick = { viewModel.handleBackPress() },
+                        onClick = { networkViewModel.handleBackPress() },
                         modifier = Modifier.testTag("web_share_back_button")
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.toggleWebShare() }) {
+                    IconButton(onClick = { networkViewModel.toggleWebShare() }) {
                         Icon(
                             imageVector = if (state.isRunning) Icons.Default.Stop else Icons.Default.PlayArrow,
                             contentDescription = "Toggle Server",
@@ -131,7 +143,7 @@ fun WebShareScreen(
                     Spacer(modifier = Modifier.height(20.dp))
 
                     Button(
-                        onClick = { viewModel.toggleWebShare() },
+                        onClick = { networkViewModel.toggleWebShare() },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (state.isRunning) Color(0xFFEF4444) else CtOrange
                         ),
@@ -197,7 +209,7 @@ fun WebShareScreen(
                             .clickable {
                                 val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                 clipboard.setPrimaryClip(ClipData.newPlainText("Web Share URL", state.serverUrl))
-                                viewModel.showMessage("URL copied to clipboard!")
+                                networkViewModel.showMessage("URL copied to clipboard!")
                             },
                         color = MaterialTheme.colorScheme.surfaceVariant
                     ) {
@@ -226,7 +238,7 @@ fun WebShareScreen(
                                 onClick = {
                                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                     clipboard.setPrimaryClip(ClipData.newPlainText("Web Share URL", state.serverUrl))
-                                    viewModel.showMessage("URL copied to clipboard!")
+                                    networkViewModel.showMessage("URL copied to clipboard!")
                                 },
                                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = CtOrange.copy(alpha = 0.15f))
                             ) {

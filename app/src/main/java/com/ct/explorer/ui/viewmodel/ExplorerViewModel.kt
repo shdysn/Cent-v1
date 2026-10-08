@@ -31,8 +31,11 @@ import kotlinx.coroutines.isActive
 import java.io.File
 import com.ct.explorer.core.navigation.NavigationManager
 import com.ct.explorer.core.events.AppEventBus
+import com.ct.explorer.features.vault.VaultViewModel
+import com.ct.explorer.features.network.NetworkServerViewModel
 
 typealias Screen = com.ct.explorer.core.navigation.Screen
+typealias FtpServerState = com.ct.explorer.features.network.FtpServerState
 
 data class PdfViewerState(
     val file: File? = null,
@@ -123,14 +126,6 @@ data class CategoryViewState(
     val isLoading: Boolean = false
 )
 
-data class FtpServerState(
-    val isRunning: Boolean = false,
-    val port: Int = 2121,
-    val ipAddress: String = "192.168.1.108"
-) {
-    val url: String get() = "ftp://$ipAddress:$port"
-}
-
 class ExplorerViewModel(application: Application) : AndroidViewModel(application) {
 
     val fileRepository = FileRepository(application.applicationContext)
@@ -178,10 +173,12 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val isCleanScanning = MutableStateFlow(false)
     val cleanedBytes = MutableStateFlow<Long?>(null)
 
-    // FTP Server State
-    private var activeFtpServer: com.ct.explorer.utils.FtpServer? = null
-    private val _ftpServerState = MutableStateFlow(FtpServerState())
-    val ftpServerState: StateFlow<FtpServerState> = _ftpServerState.asStateFlow()
+    // Feature ViewModels (Isolated Domain Delegation)
+    val vaultViewModel by lazy { VaultViewModel(application) }
+    val networkServerViewModel by lazy { NetworkServerViewModel(application) }
+
+    // FTP Server State (Delegated to NetworkServerViewModel)
+    val ftpServerState: StateFlow<FtpServerState> get() = networkServerViewModel.ftpServerState
 
     // Text Editor State
     private val _textEditorState = MutableStateFlow(TextEditorState())
@@ -218,14 +215,12 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     private var lastLoadedDirPath: String? = null
     private var lastLoadTimestamp: Long = 0L
 
-    // Vault Repository & State (Lazy initialized when user opens Vault)
-    private val _vaultRepository = lazy { VaultRepository(application) }
-    val vaultRepository get() = _vaultRepository.value
-    val isVaultPinSet = MutableStateFlow(false)
-    val isVaultUnlocked = MutableStateFlow(false)
-    private val _vaultFiles = MutableStateFlow<List<FileItem>>(emptyList())
-    val vaultFiles: StateFlow<List<FileItem>> = _vaultFiles.asStateFlow()
-    val isVaultLoading = MutableStateFlow(false)
+    // Vault State (Delegated to VaultViewModel)
+    val vaultRepository get() = vaultViewModel.vaultRepository
+    val isVaultPinSet: MutableStateFlow<Boolean> get() = vaultViewModel.isVaultPinSet
+    val isVaultUnlocked: MutableStateFlow<Boolean> get() = vaultViewModel.isVaultUnlocked
+    val vaultFiles: StateFlow<List<FileItem>> get() = vaultViewModel.vaultFiles
+    val isVaultLoading: MutableStateFlow<Boolean> get() = vaultViewModel.isVaultLoading
 
     // Duplicate Repository & State (Lazy)
     private val _duplicateRepository = lazy { DuplicateRepository(application) }
@@ -337,20 +332,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     val isInstallingXapk = MutableStateFlow(false)
     val xapkInstallProgress = MutableStateFlow("")
 
-    // 7. Biometric Vault Unlock
-    val isBiometricVaultEnabled = MutableStateFlow(false)
+    // 7. Biometric Vault Unlock (Delegated to VaultViewModel)
+    val isBiometricVaultEnabled: MutableStateFlow<Boolean> get() = vaultViewModel.isBiometricVaultEnabled
 
-    // 8. Wireless Web Share (HTTP Server) (Lazy)
-    private val _webShareServer = lazy {
-        WebShareServer(application).apply {
-            onStateChanged = { state ->
-                _webShareState.value = state
-            }
-        }
-    }
-    private val webShareServer get() = _webShareServer.value
-    private val _webShareState = MutableStateFlow(WebShareState(ipAddress = ""))
-    val webShareState: StateFlow<WebShareState> = _webShareState.asStateFlow()
+    // 8. Wireless Web Share (HTTP Server) (Delegated to NetworkServerViewModel)
+    val webShareState: StateFlow<WebShareState> get() = networkServerViewModel.webShareState
 
     // 9. Military-Grade File Shredder
     val shredTargets = MutableStateFlow<List<File>>(emptyList())
@@ -782,41 +768,9 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    // FTP Server Tool
-    fun openFtpServer() {
-        if (!(_ftpServerState.value.isRunning)) {
-            val ip = fastShareRepository.getLocalIpAddress()
-            _ftpServerState.update { it.copy(ipAddress = ip) }
-        }
-        navigateToScreen(Screen.FTP_SERVER)
-    }
-
-    fun toggleFtpServer() {
-        if (_ftpServerState.value.isRunning) {
-            activeFtpServer?.stop()
-            activeFtpServer = null
-            _ftpServerState.update { it.copy(isRunning = false) }
-            showMessage("FTP Service stopped")
-        } else {
-            val ip = fastShareRepository.getLocalIpAddress()
-            val server = com.ct.explorer.utils.FtpServer(
-                rootDir = fileRepository.rootStorageDirectory,
-                port = 2121,
-                onClientConnected = { clientIp ->
-                    viewModelScope.launch {
-                        showMessage("PC connected from $clientIp")
-                    }
-                }
-            )
-            if (server.start()) {
-                activeFtpServer = server
-                _ftpServerState.value = FtpServerState(isRunning = true, port = 2121, ipAddress = ip)
-                showMessage("FTP Service started on ftp://$ip:2121")
-            } else {
-                showMessage("Failed to bind FTP Server on port 2121")
-            }
-        }
-    }
+    // FTP Server Tool (Delegated to NetworkServerViewModel)
+    fun openFtpServer() = networkServerViewModel.openFtpServer()
+    fun toggleFtpServer() = networkServerViewModel.toggleFtpServer()
 
     // Cleaner Detailed Actions
     fun deleteLargeFiles(items: List<FileItem>) {
@@ -1304,120 +1258,23 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         showMessage(if (next) "AMOLED Pure Black ON" else "AMOLED Pure Black OFF")
     }
 
-    // Vault Functions
-    fun openVault() {
-        isVaultPinSet.value = vaultRepository.isPinSet()
-        isBiometricVaultEnabled.value = vaultRepository.isBiometricEnabled()
-        navigateToScreen(Screen.VAULT)
-    }
-
-    fun setupVaultPin(pin: String, answer: String) {
-        vaultRepository.setPin(pin, answer)
-        isVaultPinSet.value = true
-        isVaultUnlocked.value = true
-        loadVaultFiles()
-        showMessage("Vault PIN set successfully")
-    }
-
-    fun unlockVault(pin: String): Boolean {
-        val valid = vaultRepository.verifyPin(pin)
-        if (valid) {
-            isVaultUnlocked.value = true
-            loadVaultFiles()
-        }
-        return valid
-    }
-
-    fun resetVaultPinWithAnswer(answer: String, newPin: String): Boolean {
-        val success = vaultRepository.resetPinWithSecurityAnswer(answer, newPin)
-        if (success) {
-            isVaultPinSet.value = true
-            isVaultUnlocked.value = true
-            loadVaultFiles()
-        }
-        return success
-    }
-
-    fun openVaultFilePreview(item: FileItem, onReady: (FileItem) -> Unit) {
-        viewModelScope.launch {
-            val decrypted = vaultRepository.decryptToTempCacheFile(item.file)
-            if (decrypted != null && decrypted.exists()) {
-                onReady(FileItem(decrypted))
-            } else {
-                showMessage("Could not decrypt vault file for preview")
-            }
-        }
-    }
-
-    fun lockVault() {
-        isVaultUnlocked.value = false
-        _vaultFiles.value = emptyList()
-        vaultRepository.clearTempPreviewCache()
-        showMessage("Vault locked")
-    }
-
-    fun loadVaultFiles() {
-        viewModelScope.launch {
-            isVaultLoading.value = true
-            _vaultFiles.value = vaultRepository.getVaultFiles()
-            isVaultLoading.value = false
-        }
-    }
-
-    fun addFileToVault(item: FileItem) {
-        viewModelScope.launch {
-            val success = vaultRepository.addToVault(item.file)
-            if (success) {
-                showMessage("Moved \"${item.name}\" to Private Vault")
-                loadDirectory(_storageState.value.currentDir)
-                if (isVaultUnlocked.value) loadVaultFiles()
-            } else {
-                showMessage("Failed to move file to Vault")
-            }
-        }
-    }
-
+    // Vault Functions (Delegated to VaultViewModel)
+    fun openVault() = vaultViewModel.openVault()
+    fun setupVaultPin(pin: String, answer: String) = vaultViewModel.setupVaultPin(pin, answer)
+    fun unlockVault(pin: String): Boolean = vaultViewModel.unlockVault(pin)
+    fun resetVaultPinWithAnswer(answer: String, newPin: String): Boolean = vaultViewModel.resetVaultPinWithAnswer(answer, newPin)
+    fun openVaultFilePreview(item: FileItem, onReady: (FileItem) -> Unit) = vaultViewModel.openVaultFilePreview(item, onReady)
+    fun lockVault() = vaultViewModel.lockVault()
+    fun loadVaultFiles() = vaultViewModel.loadVaultFiles()
+    fun addFileToVault(item: FileItem) = vaultViewModel.addFileToVault(item) { refreshCurrentDirectory() }
     fun addFilesToVault(items: List<FileItem>) {
-        if (items.isEmpty()) return
-        viewModelScope.launch {
-            var count = 0
-            for (item in items) {
-                if (vaultRepository.addToVault(item.file)) {
-                    count++
-                }
-            }
+        vaultViewModel.addFilesToVault(items) {
             clearSelection()
-            showMessage("Moved $count item(s) to Private Vault")
-            loadDirectory(_storageState.value.currentDir)
-            if (isVaultUnlocked.value) loadVaultFiles()
+            refreshCurrentDirectory()
         }
     }
-
-    fun restoreFileFromVault(item: FileItem) {
-        viewModelScope.launch {
-            val target = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS).let {
-                File(it, "Restored")
-            }
-            val success = vaultRepository.restoreFromVault(item.file, target)
-            if (success) {
-                showMessage("Restored to Downloads/Restored")
-                loadVaultFiles()
-                loadDirectory(_storageState.value.currentDir)
-            } else {
-                showMessage("Failed to restore file")
-            }
-        }
-    }
-
-    fun deleteFileFromVault(item: FileItem) {
-        viewModelScope.launch {
-            val success = vaultRepository.deleteFromVault(item.file)
-            if (success) {
-                showMessage("Deleted from Vault")
-                loadVaultFiles()
-            }
-        }
-    }
+    fun restoreFileFromVault(item: FileItem) = vaultViewModel.restoreFileFromVault(item) { refreshCurrentDirectory() }
+    fun deleteFileFromVault(item: FileItem) = vaultViewModel.deleteFileFromVault(item)
 
     // Duplicate Finder Functions
     fun openDuplicateFinder() {
@@ -2495,21 +2352,10 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ==========================================
-    // 7. Biometric Vault Unlock
+    // 7. Biometric Vault Unlock (Delegated to VaultViewModel)
     // ==========================================
-    fun toggleBiometricVault(enabled: Boolean) {
-        vaultRepository.setBiometricEnabled(enabled)
-        isBiometricVaultEnabled.value = enabled
-        showMessage(if (enabled) "Biometric fingerprint unlock enabled" else "Biometric unlock disabled")
-    }
-
-    fun unlockVaultWithBiometrics() {
-        viewModelScope.launch {
-            _vaultFiles.value = vaultRepository.getVaultFiles()
-            isVaultUnlocked.value = true
-            showMessage("Vault unlocked with fingerprint")
-        }
-    }
+    fun toggleBiometricVault(enabled: Boolean) = vaultViewModel.toggleBiometricVault(enabled)
+    fun unlockVaultWithBiometrics() = vaultViewModel.unlockVaultWithBiometrics()
 
     // ==========================================
     // 8. Recycle Bin Retention Auto-Purge
@@ -2544,31 +2390,11 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
     }
 
     // ==========================================
-    // 8. WIRELESS WEB SHARE METHODS
+    // 8. WIRELESS WEB SHARE METHODS (Delegated to NetworkServerViewModel)
     // ==========================================
 
-    fun openWebShare() {
-        if (!_webShareState.value.isRunning) {
-            viewModelScope.launch(Dispatchers.IO) {
-                val ip = webShareServer.getLocalIpAddress()
-                _webShareState.update { it.copy(ipAddress = ip) }
-            }
-        }
-        navigateToScreen(Screen.WEB_SHARE)
-    }
-
-    fun toggleWebShare() {
-        if (_webShareState.value.isRunning) {
-            webShareServer.stop()
-            showMessage("Web Share stopped")
-        } else {
-            if (webShareServer.start()) {
-                showMessage("Web Share started! Open in any browser: ${_webShareState.value.serverUrl}")
-            } else {
-                showMessage("Failed to start Web Share server")
-            }
-        }
-    }
+    fun openWebShare() = networkServerViewModel.openWebShare()
+    fun toggleWebShare() = networkServerViewModel.toggleWebShare()
 
     // ==========================================
     // 9. FILE SHREDDER METHODS
@@ -2714,21 +2540,16 @@ class ExplorerViewModel(application: Application) : AndroidViewModel(application
         runCatching { mediaPlayer?.stop() }
         runCatching { mediaPlayer?.release() }
         mediaPlayer = null
-        runCatching { activeFtpServer?.stop() }
-        activeFtpServer = null
-        if (_webShareServer.isInitialized()) {
-            runCatching { _webShareServer.value.stop() }
-        }
+        vaultViewModel.lockVault()
+        networkServerViewModel.stopAllServers()
         if (_fastShareRepository.isInitialized()) {
             runCatching { _fastShareRepository.value.stopShareServer() }
-        }
-        if (_vaultRepository.isInitialized()) {
-            runCatching { _vaultRepository.value.clearTempPreviewCache() }
         }
     }
 
     fun showMessage(msg: String) {
         _message.value = msg
+        AppEventBus.showMessage(msg)
     }
 
     fun clearMessage() {

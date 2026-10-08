@@ -25,14 +25,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ct.explorer.ui.theme.MiMint
 import com.ct.explorer.ui.theme.CtOrange
 import com.ct.explorer.ui.viewmodel.ExplorerViewModel
+import com.ct.explorer.features.network.NetworkServerViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FtpServerScreen(
     viewModel: ExplorerViewModel,
     modifier: Modifier = Modifier
 ) {
-    val ftpState by viewModel.ftpServerState.collectAsStateWithLifecycle()
+    FtpServerScreen(
+        networkViewModel = viewModel.networkServerViewModel,
+        modifier = modifier
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FtpServerScreen(
+    networkViewModel: NetworkServerViewModel,
+    modifier: Modifier = Modifier
+) {
+    val ftpState by networkViewModel.ftpServerState.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier.testTag("ftp_server_screen"),
@@ -41,7 +53,7 @@ fun FtpServerScreen(
                 title = { Text("Transfer to PC") },
                 navigationIcon = {
                     IconButton(
-                        onClick = { viewModel.handleBackPress() },
+                        onClick = { networkViewModel.handleBackPress() },
                         modifier = Modifier.testTag("ftp_back_button")
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -189,7 +201,7 @@ fun FtpServerScreen(
 
             // Start / Stop Service button
             Button(
-                onClick = { viewModel.toggleFtpServer() },
+                onClick = { networkViewModel.toggleFtpServer() },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (ftpState.isRunning) Color(0xFFEF4444) else CtOrange,
                     contentColor = Color.White
