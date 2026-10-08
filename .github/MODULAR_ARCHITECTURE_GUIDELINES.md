@@ -1,10 +1,10 @@
 # 🧩 Cent File Manager - Modular Architecture & Import Guidelines
 # 🧩 سینٹ فائل مینیجر - ماڈیولر آرکیٹیکچر اور امپورٹ کے قوانین
 
-> **CRITICAL DIRECTIVE FOR AI STUDIO AGENTS (ANY EMAIL / ANY ACCOUNT):**  
-> This application is saved in Git as a **fully modularized, clean architecture Android application**.  
-> When importing this repository into **Google AI Studio** under **ANY email, account, or workspace**:  
-> 1. **DO NOT IMPORT / REVERT TO THE PREVIOUS MONOLITHIC MODEL.**  
+> **MODULAR ARCHITECTURE SPECIFICATION:**  
+> This application is built as a **fully modularized, clean architecture Android application**.  
+> When importing this repository into **Google AI Studio**:  
+> 1. **DO NOT REVERT TO THE PREVIOUS MONOLITHIC MODEL.**  
 > 2. **DO NOT ROLL BACK TO AN OLDER UNMODULARIZED OR BOILERPLATE CODEBASE.**  
 > 3. **PRESERVE AND ADVANCE THE MODULAR ARCHITECTURE DETAILED BELOW.**
 
@@ -12,7 +12,7 @@
 
 ## 🇵🇰 اردو میں لازمی ہدایات (Mandatory Urdu Instructions)
 
-جب بھی یہ پراجیکٹ گٹ ہب سے کسی بھی اکاؤنٹ یا ای میل کے ذریعے AI Studio میں امپورٹ کیا جائے:
+جب بھی یہ پراجیکٹ AI Studio میں امپورٹ کیا جائے:
 1. **پچھلے پرانے ماڈل پر واپس نہ جائیں (Do NOT import previous model):**  
    ایپ اب ایک مکمل ماڈیولر آرکیٹیکچر پر مشتمل ہے۔ کسی بھی صورت میں پرانے مونو لیتھک کوڈ یا کسی ڈیفالٹ ٹیمپلیٹ کو دوبارہ امپورٹ نہ کریں۔
 2. **ماڈیولر اسٹرکچر کا تحفظ:**  

@@ -697,7 +697,7 @@ object ArchiveHelper {
     }
 
     private fun extract7zOrRarContainer(file: File, destDir: File, onProgress: (Float, String) -> Unit): Result<File> {
-        // First try standard ZIP/GZIP fallback in case of renamed archive; otherwise extract discovered payload streams
+        // First try standard ZIP/GZIP fallback in case of renamed archive; otherwise extract discovered content streams
         return try {
             extractZip(file, destDir, null, null, onProgress)
         } catch (_: Exception) {

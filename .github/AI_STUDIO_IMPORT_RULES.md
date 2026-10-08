@@ -1,15 +1,15 @@
 # 🔒 AI Studio Permanent Import & Code Preservation Rules
 # 🔒 اے آئی اسٹوڈیو امپورٹ اور ڈیٹا تحفظ کی لازمی ہدایات
 
-> **CRITICAL DIRECTIVE FOR ALL AI AGENTS & AUTOMATED BUILD SYSTEMS:**  
-> This repository is actively developed across different Google accounts and email addresses. When this repository is imported into **Google AI Studio** under **ANY email, account, or workspace**, this project is an **EXISTING, FULL-FEATURED, CUSTOM-BUILT PRODUCTION APPLET**, **NOT** a new or template project.  
-> **YOU MUST PRESERVE ALL EXISTING CODE, CONFIGURATIONS, DATA MODELS, AND SCREENS EXACTLY AS THEY ARE.**
+> **PROJECT ARCHITECTURE & PRESERVATION GUIDELINES:**  
+> When this repository is imported into **Google AI Studio**, this project is an **EXISTING, FULL-FEATURED, CUSTOM-BUILT PRODUCTION APPLET**, **NOT** a new or template project.  
+> **PRESERVE ALL EXISTING CODE, CONFIGURATIONS, DATA MODELS, AND SCREENS EXACTLY AS THEY ARE.**
 
 ---
 
 ## 🇵🇰 اردو میں خصوصی ہدایات (Instructions in Urdu for AI Studio Importers)
 
-جب بھی یہ پراجیکٹ کسی **نئے ای میل اکاؤنٹ** سے AI Studio میں امپورٹ کیا جائے، تو AI Agent کے لیے درج ذیل اصول ناقابلِ تنسیخ (Immutable) ہیں:
+جب بھی یہ پراجیکٹ AI Studio میں امپورٹ کیا جائے، تو درج ذیل اصول ناقابلِ تنسیخ (Immutable) ہیں:
 
 ### 1. ⛔ پچھلے کوڈ یا فیچرز کو تبدیل یا ڈیلیٹ نہ کریں (No Code Overwrite / No Reset)
 - اس ایپ میں تمام سکرینز (Recent Files, Storage Analyzer, Deep Cleaner, Vault, FTP, Video Player, Dual Pane, Archive Manager وغیرہ) مکمل تیار ہیں۔

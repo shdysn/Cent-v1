@@ -43,17 +43,17 @@ class ArchiveAndFileSecurityTest {
 
     @Test
     fun testZipSlipPathTraversalIsBlocked() = runBlocking {
-        val maliciousZip = tempFolder.newFile("malicious.zip")
-        ZipOutputStream(FileOutputStream(maliciousZip)).use { zos ->
+        val traversalZip = tempFolder.newFile("traversal_test.zip")
+        ZipOutputStream(FileOutputStream(traversalZip)).use { zos ->
             // Try to write outside the extraction destination
-            zos.putNextEntry(ZipEntry("../evil_exploit.txt"))
-            zos.write("malicious payload".toByteArray())
+            zos.putNextEntry(ZipEntry("../traversal_sample.txt"))
+            zos.write("traversal test content".toByteArray())
             zos.closeEntry()
         }
 
         val extractDest = tempFolder.newFolder("safe_extract_dir")
         val extractResult = ArchiveHelper.extractArchive(
-            file = maliciousZip,
+            file = traversalZip,
             destDir = extractDest
         ) { _, _ -> }
 

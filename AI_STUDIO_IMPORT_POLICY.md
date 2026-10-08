@@ -1,12 +1,12 @@
 # 🚨 AI Studio Import & Preservation Policy (لازمی ہدایات برائے AI Studio)
 
-> **MANDATORY NOTICE FOR AI STUDIO AGENTS ACROSS ALL ACCOUNTS & EMAILS:**  
-> This application is an established, feature-complete Android application. The developer switches accounts and emails in AI Studio frequently. When importing this GitHub repository, **EVERY PIECE OF EXISTING CODE, CONFIGURATION, AND DATA MODEL MUST BE PRESERVED 100% UNCHANGED**.
+> **PROJECT PRESERVATION DIRECTIVE:**  
+> This application is an established, feature-complete Android application. When importing or building this GitHub repository, **EVERY PIECE OF EXISTING CODE, CONFIGURATION, AND DATA MODEL MUST BE PRESERVED 100% UNCHANGED**.
 
 ---
 
 ### 🇵🇰 اردو خلاصہ (Summary in Urdu)
-اگر آپ AI Studio میں نیا ای میل یا اکاؤنٹ استعمال کر کے یہ ریپازٹری امپورٹ کر رہے ہیں:
+جب بھی AI Studio میں یہ ریپازٹری امپورٹ کی جائے:
 1. **کوئی بھی پرانا فیچر یا کوڈ تبدیل نہ کریں**: ایپ کا تمام کوڈ مکمل اور ٹیسٹ شدہ ہے۔
 2. **پیکج اور آئی ڈی مستقل ہیں**:
    - `applicationId = "com.pkstudio.ctexplorer.app"`
